@@ -66,6 +66,18 @@ def integrate(
     output samples (the integrator may take many internal steps between them).
     Defaults are tuned for orbital-class problems: 8th-order Dormand–Prince
     (``DOP853``) with ``rtol=1e-10`` and ``atol=1e-12``.
+
+    The state vector packed into ``solve_ivp`` is ``[r; v]``; the rhs returns
+    ``[v; ff.force(t, r) / mass]``. Schematically::
+
+        .. mermaid::
+
+            flowchart LR
+                S[State y = r ⊕ v] --> RHS[rhs(t, y)]
+                RHS --> F[ff.force(t, r)]
+                F --> A[a = F / m]
+                A --> DY[dy/dt = v ⊕ a]
+                DY -.-> S
     """
     if mass <= 0:
         raise ValueError("mass must be positive")

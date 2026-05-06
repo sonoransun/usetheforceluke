@@ -28,6 +28,15 @@ class QGPGravitonField:
     same potential form but represent independent speculative mechanisms, so
     the package keeps them as peer classes.
 
+    Construction-time pipeline::
+
+        .. mermaid::
+
+            flowchart LR
+                Q[QuarkGluonPlasmaSource] --> GAM["Γ = source.graviton_emission_rate()  (cached)"]
+                GAM --> PHI["φ(r) = -g·Γ·exp(-R/λ)/R"]
+                PHI --> F["F(r) = -m_probe · ∇φ(r)"]
+
     Construction:
 
     - ``source``: the QGP source providing ``graviton_emission_rate()``;

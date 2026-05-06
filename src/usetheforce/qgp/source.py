@@ -86,6 +86,17 @@ class QuarkGluonPlasmaSource:
     crossover ``g_eff(T)`` from ``g_HRG ≈ 3`` to ``g_QGP ≈ 47.5`` near
     ``T_c ≈ 155 MeV``. Total energy is just ``ε × V``.
 
+    From parameters to graviton emission rate Γ::
+
+        .. mermaid::
+
+            flowchart LR
+                P[V, T] --> G["g_eff(T) tanh-crossover (anchored)"]
+                G --> EPS["ε(T) Stefan–Boltzmann (anchored)"]
+                EPS --> E["E_total = ε · V (anchored)"]
+                E --> POW["P = η_containment · E / τ (speculative)"]
+                POW --> GAM["Γ = η_graviton · P / E_quantum (speculative)"]
+
     Three parameters are *speculative* — they're listed in
     ``metadata["speculative_components"]`` and live nowhere else in the
     package's anchored physics:

@@ -50,6 +50,65 @@ flowchart LR
 
 The yellow box is where speculative scaling enters: `missions/adapters.py` is the *only* place vehicle power is mapped to model parameters, and every adapter prints its assumptions next to the result.
 
+### Object graph
+
+The framework's primary types and their relationships:
+
+```mermaid
+classDiagram
+    class ForceField {
+        <<protocol>>
+        +metadata: dict
+        +force(t, r) ndarray
+        +potential(r) float|None
+    }
+    class ParallelPlateCasimir
+    class ScaledCasimir
+    class ShapedFieldAnsatz
+    class HeavyElementLattice
+    class StimulatedEmissionArray
+    class AntimatterCounterGravity
+    class AntimatterGravitonField
+    class QGPGravitonField
+    ForceField <|.. ParallelPlateCasimir
+    ForceField <|.. ScaledCasimir
+    ForceField <|.. ShapedFieldAnsatz
+    ForceField <|.. HeavyElementLattice
+    ForceField <|.. StimulatedEmissionArray
+    ForceField <|.. AntimatterCounterGravity
+    ForceField <|.. AntimatterGravitonField
+    ForceField <|.. QGPGravitonField
+
+    class QuarkGluonPlasmaSource {
+        +volume_m3, temperature_K
+        +energy_density() float
+        +graviton_emission_rate() float
+    }
+    QGPGravitonField o-- QuarkGluonPlasmaSource : composed of
+
+    class TrajectoryResult {
+        +t, r, v: ndarray
+        +mass: float
+        +kinetic_energy() ndarray
+        +total_energy(ff) ndarray
+    }
+    class AdapterResult {
+        +field: ForceField
+        +r_ref_m, applicable, assumptions
+    }
+    class Snapshot {
+        +force_n, accel_mps2, twr_1g
+        +falloff_ratio, applicable
+    }
+    class MissionResult {
+        +trajectory: TrajectoryResult
+        +delta_v_mps, peak_g, energy_j
+        +assumptions: dict
+    }
+    AdapterResult --> ForceField
+    MissionResult --> TrajectoryResult
+```
+
 ## The eight force models
 
 **Anchored** (textbook physics, used as calibration):
@@ -106,6 +165,22 @@ flowchart LR
 
 ![Sample trajectory: interplanetary cruiser, heavy-element lattice, 3-day burn](assets/mission_trajectory.png)
 
+### Numerical rigour — actual conservation drift
+
+The "<1e-6 energy drift" claim, plotted directly. For each conservative speculative model, integrate one full circular orbit and watch the relative drift `|ΔE/E₀|`:
+
+![Energy conservation drift over one orbital period](assets/conservation_drift.png)
+
+DOP853 with `rtol=1e-10` keeps `|ΔE/E₀|` **at the 10⁻¹⁰ level** — five orders of magnitude below the claimed floor. The framework is honest about its numerics.
+
+### Anchored physics — the QGP deconfinement crossover
+
+The QGP avenue's energy density follows Stefan–Boltzmann thermodynamics with a lattice-QCD-flavoured `g_eff(T)` that interpolates between the hadron-resonance gas (`g_HRG ≈ 3`) and the deconfined plasma (`g_QGP ≈ 47.5`) via a tanh of width `ΔT ≈ 20 MeV` centred on the lattice value `T_c ≈ 155 MeV`:
+
+![g_eff(T) crossover](assets/g_eff_crossover.png)
+
+Above `T_c + 2 ΔT` the curve sits on the QGP plateau — that's where the missions adapter pins the operating point so the energy density is well-defined. The graviton coupling that turns this anchored energy density into thrust remains speculative; that part lives in `QuarkGluonPlasmaSource.metadata["speculative_components"]`.
+
 ### Three-tier visualisation
 
 | Tier | Use | Backend |
@@ -145,6 +220,38 @@ flowchart LR
     classDef spec fill:#fff3b0,stroke:#d4a017,color:#000
 ```
 
+### What `run_mission` actually does
+
+A typical call to `run_mission(vehicle, model_key, adapter, mission)` traces this path through the framework:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant run_mission
+    participant adapter
+    participant ForceField
+    participant ConstantThrust as _ConstantThrustField
+    participant integrate
+    participant solve_ivp
+    User->>+run_mission: vehicle, model_key, adapter, mission
+    run_mission->>+adapter: vehicle, vehicle.power_w
+    adapter-->>-run_mission: AdapterResult{field, r_ref, assumptions}
+    run_mission->>ForceField: force(0, [r_ref, 0, 0])
+    ForceField-->>run_mission: F at reference radius
+    run_mission->>ConstantThrust: thrust_n, axis, vehicle, background
+    run_mission->>+integrate: const_thrust, mass, r0, v0, t_span
+    integrate->>+solve_ivp: rhs, y0, DOP853 rtol=1e-10
+    loop per ODE step
+        solve_ivp->>ConstantThrust: force(t, r)
+        ConstantThrust-->>solve_ivp: thrust_vec + m·bg(r)
+    end
+    solve_ivp-->>-integrate: t, y
+    integrate-->>-run_mission: TrajectoryResult
+    run_mission-->>-User: MissionResult{Δv, peak_g, energy, assumptions}
+```
+
+The mission runner reduces the speculative model to its peak `|F|` at the adapter's reference radius and applies it as constant body-frame thrust through `_ConstantThrustField`. If you want the probe to actually fly *through* a model's spatial field, call `trajectories.integrate(model_force_field, …)` directly.
+
 ### Thrust-to-weight grid
 
 By construction (matched-power, fixed reference radius), the four applicable models give *identical* peak acceleration for a given vehicle. The Casimir variants are correctly flagged inapplicable: their cavity force is internal and produces no centre-of-mass thrust.
@@ -165,6 +272,22 @@ Acceleration matches across models because we matched the input power. The genui
 - **`heavy_element_lattice`** (orange) is also 1/r² (softened Coulomb) — comparable reach to graviton in this configuration.
 
 This figure is the single most important comparison the framework produces: at matched input power, *the long-range mechanism wins*.
+
+#### Yukawa screening sweep — λ → ∞ recovers inverse-square
+
+The "Yukawa effectively 1/r² inside its screening length" claim, plotted directly. For the antimatter graviton with `Γ = g = m_probe = 1`, sweep λ over five decades:
+
+![Yukawa screening sweep](assets/yukawa_screening.png)
+
+The exponential cut-off bites at distances comparable to λ. At λ = 10⁶ m (the missions adapter's default) the curve traces the dashed `1/r²` reference all the way out to 10 km — that's why the falloff comparison above places `antimatter_graviton` next to `heavy_element_lattice` (genuine 1/r²).
+
+#### Spatial field shapes — what the falloff column abstracts
+
+The 1D falloff curves above hide the 2D structure. Same probes evaluated on a (x, y, 0) slice with a shared logarithmic colour scale:
+
+![Spatial |F(x, y, 0)| heatmaps for the four applicable models](assets/field_heatmaps.png)
+
+`shaped_field_ansatz` has a *vanishing* force at its centre (the Gaussian potential's minimum is a saddle for the gradient), peaks at radius σ, and dies fast. `heavy_element_lattice` is a smooth softened-Coulomb blob. `stimulated_emission_array` and `antimatter_graviton` both diverge near their sources but with different radial laws; the heatmaps make the difference visible at a glance.
 
 ## Headline results
 
@@ -207,6 +330,7 @@ Three runnable scripts under `notebooks/`:
 | `01_extended_models.py` | Demos for the three newer models (heavy-element lattice, stimulated-emission array, antimatter graviton) |
 | `02_evaluation.py` | Full vehicle×model evaluation: writes `results/snapshot.md`, `accel_vs_mass.png`, per-mission `mission_*.{png,html}` |
 | `03_documentation_figures.py` | Regenerates the README's curated figures into `assets/` |
+| `04_technical_figures.py` | Regenerates the technical/physics figures into `assets/` (g_eff crossover, Yukawa sweep, conservation drift, field heatmaps) |
 
 ## Working style
 

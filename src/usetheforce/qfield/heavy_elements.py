@@ -21,7 +21,18 @@ import numpy as np
 
 
 class HeavyElementLattice:
-    """Force from a finite array of softened-Coulomb sources."""
+    """Force from a finite array of softened-Coulomb sources.
+
+    Per-call dataflow::
+
+        .. mermaid::
+
+            flowchart LR
+                S[Sites r_i + strengths μ_i] --> D[d_i = r − r_i]
+                D --> N["n_i = √(|d_i|² + ε²)  (Plummer softening)"]
+                N --> W["w_i = -κ μ_i / n_i³"]
+                W --> F["F = Σ_i w_i · d_i  (vectorised einsum)"]
+    """
 
     metadata: dict[str, Any]
 

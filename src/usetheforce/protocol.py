@@ -5,6 +5,24 @@ this protocol; ``trajectories.integrate`` consumes it. Adding a new avenue is
 one class. Keep this contract minimal — every method here is paid for in every
 implementation.
 
+Sequence during ODE integration::
+
+    .. mermaid::
+
+        sequenceDiagram
+            participant Caller
+            participant integrate
+            participant solve_ivp
+            participant ForceField
+            Caller->>integrate: ff, mass, r0, v0, t_span
+            integrate->>solve_ivp: rhs, y0, DOP853 rtol=1e-10
+            loop per ODE step
+                solve_ivp->>ForceField: force(t, r)
+                ForceField-->>solve_ivp: F (N)
+            end
+            solve_ivp-->>integrate: t, y
+            integrate-->>Caller: TrajectoryResult
+
 Writing a new ``ForceField``
 ----------------------------
 

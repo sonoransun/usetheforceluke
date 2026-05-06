@@ -28,7 +28,19 @@ import numpy as np
 
 
 class StimulatedEmissionArray:
-    """Coherent phased-array emitter field exerting a radiation force on a probe."""
+    """Coherent phased-array emitter field exerting a radiation force on a probe.
+
+    Per-call dataflow::
+
+        .. mermaid::
+
+            flowchart LR
+                E[Emitters: positions, A, φ, k] --> R[R_n = |r − r_n|]
+                R --> Z["z(r) = Σ A_n · e^{i(kR_n + φ_n)} / R_n"]
+                Z --> I["I = |z|²"]
+                I --> U["U = -α I"]
+                U --> F["F = -∇U = α ∇I = 2α Re[(∇z) z*]"]
+    """
 
     metadata: dict[str, Any]
 

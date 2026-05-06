@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "usetheforce"
+version = "0.0.1"
+description = "Speculative propulsion: artificial gravity-field generation, trajectory planning, and field simulations."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "usetheforce contributors" }]
+license = { text = "MIT" }
+keywords = ["physics", "propulsion", "casimir", "trajectories", "simulation"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "sympy>=1.12",
+    "pint>=0.23",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.8"]
+interactive = ["plotly>=5.20"]
+"3d" = ["pyvista>=0.43", "trame>=3.5", "ipywidgets>=8.1", "imageio>=2.30"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.100",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "jupyter>=1.0",
+    "nbconvert>=7.16",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+usetheforce = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning:pkg_resources"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF", "ARG", "PLC0415"]
+# RUF001-003: ambiguous unicode (σ, ε, π, ℏ are unavoidable in physics).
+# E501: long lines OK in physics formulas.
+# N803/N806: physics conventionally uses capitals (R, A, U, I, X, Y, Z, …).
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "N803", "N806"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "ARG001", "ARG002", "RUF012"]
+"src/usetheforce/symbolic/**" = ["N816"]
+"notebooks/**" = ["PLC0415"]
+
+[tool.mypy]
+python_version = "3.11"
+strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+ignore_missing_imports = true
+files = ["src"]

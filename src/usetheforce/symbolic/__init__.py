@@ -1,0 +1,43 @@
+"""SymPy derivations — source of truth for the numerical kernels."""
+
+from usetheforce.symbolic.casimir import casimir_pressure_expr, casimir_pressure_lambdified
+from usetheforce.symbolic.conservation import kinetic_energy_expr, total_energy_expr
+from usetheforce.symbolic.graviton import (
+    graviton_force_radial_expr,
+    graviton_force_radial_lambdified,
+    graviton_potential_expr,
+    graviton_potential_lambdified,
+)
+from usetheforce.symbolic.heavy_elements import (
+    heavy_element_force_radial_expr,
+    heavy_element_force_radial_lambdified,
+    heavy_element_potential_expr,
+    heavy_element_potential_lambdified,
+)
+from usetheforce.symbolic.stimulated_emission import (
+    single_emitter_force_radial_expr,
+    single_emitter_force_radial_lambdified,
+    single_emitter_intensity_expr,
+    single_emitter_intensity_lambdified,
+    single_emitter_potential_expr,
+)
+
+__all__ = [
+    "casimir_pressure_expr",
+    "casimir_pressure_lambdified",
+    "graviton_force_radial_expr",
+    "graviton_force_radial_lambdified",
+    "graviton_potential_expr",
+    "graviton_potential_lambdified",
+    "heavy_element_force_radial_expr",
+    "heavy_element_force_radial_lambdified",
+    "heavy_element_potential_expr",
+    "heavy_element_potential_lambdified",
+    "kinetic_energy_expr",
+    "single_emitter_force_radial_expr",
+    "single_emitter_force_radial_lambdified",
+    "single_emitter_intensity_expr",
+    "single_emitter_intensity_lambdified",
+    "single_emitter_potential_expr",
+    "total_energy_expr",
+]

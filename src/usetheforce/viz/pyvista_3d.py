@@ -75,7 +75,10 @@ def animate_trajectory_in_field(
         except (TypeError, ValueError):
             pass  # potential not numerically usable; skip isosurface
 
-    craft = pv.Sphere(radius=glyph_factor * 0.2, center=tuple(result.r[0]))
+    # Build the craft sphere once at the origin; translate it per frame instead
+    # of removing & re-adding the actor (much faster — VTK actor management has
+    # significant per-frame overhead on a remove/add pair).
+    craft = pv.Sphere(radius=glyph_factor * 0.2, center=(0.0, 0.0, 0.0))
     craft_actor = plotter.add_mesh(craft, color="red")
 
     if output is not None:
@@ -86,9 +89,9 @@ def animate_trajectory_in_field(
             plotter.open_movie(str(out), framerate=fps)
 
     for i in range(len(result.t)):
-        plotter.remove_actor(craft_actor)
-        craft = pv.Sphere(radius=glyph_factor * 0.2, center=tuple(result.r[i]))
-        craft_actor = plotter.add_mesh(craft, color="red")
+        # Move the actor to the next position via SetPosition (in-place).
+        x, y, z = (float(v) for v in result.r[i])
+        craft_actor.SetPosition(x, y, z)
         if output is not None:
             plotter.write_frame()
         else:

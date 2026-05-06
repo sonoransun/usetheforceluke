@@ -14,6 +14,12 @@ from usetheforce.symbolic.heavy_elements import (
     heavy_element_potential_expr,
     heavy_element_potential_lambdified,
 )
+from usetheforce.symbolic.qgp import (
+    g_effective_expr,
+    g_effective_lambdified,
+    sb_energy_density_expr,
+    sb_energy_density_lambdified,
+)
 from usetheforce.symbolic.stimulated_emission import (
     single_emitter_force_radial_expr,
     single_emitter_force_radial_lambdified,
@@ -25,6 +31,8 @@ from usetheforce.symbolic.stimulated_emission import (
 __all__ = [
     "casimir_pressure_expr",
     "casimir_pressure_lambdified",
+    "g_effective_expr",
+    "g_effective_lambdified",
     "graviton_force_radial_expr",
     "graviton_force_radial_lambdified",
     "graviton_potential_expr",
@@ -34,6 +42,8 @@ __all__ = [
     "heavy_element_potential_expr",
     "heavy_element_potential_lambdified",
     "kinetic_energy_expr",
+    "sb_energy_density_expr",
+    "sb_energy_density_lambdified",
     "single_emitter_force_radial_expr",
     "single_emitter_force_radial_lambdified",
     "single_emitter_intensity_expr",

@@ -40,6 +40,13 @@ class Mission:
     n_eval: int = 200
 
 
+# Module-level singletons for the position-independent backgrounds. Returning
+# the same array each call is safe because force consumers don't mutate it; this
+# avoids ~thousands of small allocations per ODE integration.
+_ZERO3: np.ndarray = np.zeros(3)
+_G_VERTICAL: np.ndarray = np.array([0.0, 0.0, -9.80665])
+
+
 def _earth_central_gravity(r: np.ndarray) -> np.ndarray:
     """Central inverse-square gravity around Earth at origin."""
     rn = float(np.linalg.norm(r))
@@ -47,12 +54,13 @@ def _earth_central_gravity(r: np.ndarray) -> np.ndarray:
 
 
 def _constant_g(r: np.ndarray) -> np.ndarray:  # noqa: ARG001
-    """Constant 1g downward (-z)."""
-    return np.array([0.0, 0.0, -9.80665])
+    """Constant 1 g downward (-z). Returns a shared array — do not mutate."""
+    return _G_VERTICAL
 
 
 def _free(r: np.ndarray) -> np.ndarray:  # noqa: ARG001
-    return np.zeros(3)
+    """Zero background gravity. Returns a shared array — do not mutate."""
+    return _ZERO3
 
 
 _BACKGROUNDS: dict[str, Callable[[np.ndarray], np.ndarray]] = {

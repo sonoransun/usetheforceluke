@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
+import scipy.constants as sc
 
 from usetheforce import ForceField, ureg
 from usetheforce.antimatter import AntimatterCounterGravity, AntimatterGravitonField
 from usetheforce.casimir import ParallelPlateCasimir, ScaledCasimir
 from usetheforce.qfield import HeavyElementLattice, ShapedFieldAnsatz, StimulatedEmissionArray
+from usetheforce.qgp import QGPGravitonField, QuarkGluonPlasmaSource
+
+_MEV_TO_K = 1e6 * sc.e / sc.k
 
 
 def _check(ff: ForceField) -> None:
@@ -79,3 +83,11 @@ def test_graviton_field_protocol() -> None:
     )
     _check(ff)
     assert ff.metadata["speculative"] is True
+
+
+def test_qgp_graviton_field_protocol() -> None:
+    src = QuarkGluonPlasmaSource(volume=1.0, temperature=200.0 * _MEV_TO_K)
+    ff = QGPGravitonField(source=src, screening_length=5.0, probe_mass=1.0)
+    _check(ff)
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "qgp"

@@ -34,6 +34,7 @@ class ScaledCasimir:
             "avenue": "casimir",
             "model": f"scaled parallel-plate (g={self._g})",
             "speculative": True,
+            "speculative_components": ["geometry_factor"],
             "citation": "speculative extension; geometry-factor ansatz only",
         }
 

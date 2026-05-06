@@ -39,6 +39,7 @@ class StimulatedEmissionArray:
         phases: np.ndarray | Sequence[float],
         wavenumber: float,
         coupling: float = 1.0,
+        min_distance_m: float = 0.0,
     ) -> None:
         self._pos = np.asarray(positions, dtype=float)
         if self._pos.ndim != 2 or self._pos.shape[1] != 3:
@@ -53,20 +54,27 @@ class StimulatedEmissionArray:
             )
         self._k = float(wavenumber)
         self._alpha = float(coupling)
+        self._min_R = float(min_distance_m)
         if self._k <= 0:
             raise ValueError("wavenumber must be positive")
+        if self._min_R < 0:
+            raise ValueError("min_distance_m must be non-negative")
         self.metadata = {
             "avenue": "qfield",
             "model": f"stimulated-emission phased array (N={n})",
             "speculative": True,
+            "speculative_components": ["amplitudes", "phases", "coupling"],
             "citation": "coherent phased-array radiation-pressure ansatz; not derived from QED",
         }
 
     def _displacements(self, r: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         d = r[None, :] - self._pos  # (N, 3)
         R = np.sqrt(np.einsum("ij,ij->i", d, d))  # (N,)
-        if np.any(R == 0):
-            raise ValueError("probe position coincides with an emitter")
+        if np.any(self._min_R >= R):
+            raise ValueError(
+                f"probe within min_distance_m={self._min_R} of an emitter "
+                f"(closest R={float(R.min())})"
+            )
         d_hat = d / R[:, None]
         return d, R, d_hat
 

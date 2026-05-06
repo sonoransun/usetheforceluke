@@ -17,9 +17,18 @@ from usetheforce.units import to_si
 class ParallelPlateCasimir:
     """Attractive Casimir force between two perfectly-conducting parallel plates.
 
-    The force acts along ``-axis`` on the plate at ``+separation/2`` and along
-    ``+axis`` on the plate at ``-separation/2``. By default we report the force
-    on the +axis plate; the sign is therefore negative along ``axis``.
+    The model represents a rigid-cavity *body force* — a constant thrust
+    between two fixed-geometry plates. ``force(t, r)`` returns the same vector
+    everywhere in space (the plate separation is set at construction; probe
+    position has no effect). ``potential(r)`` returns the cavity's
+    Casimir energy (also constant in ``r``).
+
+    **This is not a probe-position field.** ``F = -∇U`` holds trivially because
+    both sides are zero in space — but ``total_energy`` over a Casimir trajectory
+    is meaningless because the field exerts a constant body force regardless of
+    position. The mission adapter flags ``applicable=False`` for free-flight
+    propulsion accordingly; treat this model as the textbook anchor for
+    benchmarking, not as a propulsion-suitable potential.
 
     Parameters use pint Quantities at the boundary; internally everything is SI.
     """
@@ -40,23 +49,30 @@ class ParallelPlateCasimir:
             raise ValueError("area must be positive")
         self._axis = np.asarray(axis, dtype=float)
         self._axis /= np.linalg.norm(self._axis)
+        # Cached static quantities — both depend only on (separation, area), set
+        # at construction. Caching saves the per-call pow + multiply in the
+        # hot ODE / snapshot loop.
+        self._pressure: float = -(np.pi**2) * hbar * c / (240.0 * self._sep**4)
+        self._potential: float = -(np.pi**2) * hbar * c * self._area / (720.0 * self._sep**3)
+        self._force_vec: np.ndarray = self._pressure * self._area * self._axis
         self.metadata = {
             "avenue": "casimir",
             "model": "parallel-plate (Casimir 1948)",
             "speculative": False,
+            "speculative_components": [],
+            "applicable_for_trajectory": False,
             "citation": "Casimir 1948, Proc. K. Ned. Akad. Wet. 51:793",
         }
 
     @property
     def pressure(self) -> float:
-        """Casimir pressure in Pa (negative = attractive)."""
-        return -(np.pi**2) * hbar * c / (240.0 * self._sep**4)
+        """Casimir pressure in Pa (negative = attractive). Cached."""
+        return self._pressure
 
-    def force(self, t: float, r: np.ndarray) -> np.ndarray:  # noqa: ARG002 (steady-state)
-        """Force in Newtons on the ``+axis`` plate."""
-        magnitude = self.pressure * self._area
-        return magnitude * self._axis
+    def force(self, t: float, r: np.ndarray) -> np.ndarray:  # noqa: ARG002
+        """Force in Newtons on the ``+axis`` plate. Constant in space and time."""
+        return self._force_vec
 
     def potential(self, r: np.ndarray) -> float | None:  # noqa: ARG002
-        """Energy U = -π² ℏ c A / (720 a³). Independent of ``r`` (rigid plates)."""
-        return -(np.pi**2) * hbar * c * self._area / (720.0 * self._sep**3)
+        """Cavity energy U = -π² ℏ c A / (720 a³). Constant in space (rigid plates)."""
+        return self._potential

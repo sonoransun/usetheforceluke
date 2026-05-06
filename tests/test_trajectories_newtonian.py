@@ -76,6 +76,47 @@ def test_circular_kepler_orbit_closes() -> None:
     assert drift < 1e-8, f"energy drift {drift} too large"
 
 
+class _NaNPotentialField:
+    """A ForceField whose potential returns NaN — total_energy must reject it."""
+
+    metadata: dict[str, Any] = {
+        "avenue": "test",
+        "model": "nan-potential",
+        "speculative": False,
+    }
+
+    def force(self, t: float, r: np.ndarray) -> np.ndarray:
+        return np.zeros(3)
+
+    def potential(self, r: np.ndarray) -> float:
+        return float("nan")
+
+
+def test_total_energy_rejects_nan_potential() -> None:
+    ff = _NaNPotentialField()
+    traj = integrate(ff, 1.0, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], (0.0, 1.0), n_eval=10)
+    with pytest.raises(ValueError, match="non-finite"):
+        traj.total_energy(ff)
+
+
+def test_total_energy_rejects_none_potential() -> None:
+    """A field with no potential (returns None) must surface a clear error, not crash."""
+
+    class _NoPotentialField:
+        metadata: dict[str, Any] = {"avenue": "test", "model": "none-pot", "speculative": False}
+
+        def force(self, t: float, r: np.ndarray) -> np.ndarray:
+            return np.zeros(3)
+
+        def potential(self, r: np.ndarray) -> None:
+            return None
+
+    ff = _NoPotentialField()
+    traj = integrate(ff, 1.0, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], (0.0, 1.0), n_eval=10)
+    with pytest.raises(ValueError, match="does not provide a potential"):
+        traj.total_energy(ff)
+
+
 def test_integrate_rejects_bad_input() -> None:
     ff = ConstantGravity()
     with pytest.raises(ValueError):

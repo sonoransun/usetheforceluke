@@ -25,6 +25,8 @@ from typing import Any
 
 import numpy as np
 
+from usetheforce._yukawa import displacement, yukawa_force_on_probe, yukawa_potential
+
 
 class AntimatterGravitonField:
     """Yukawa graviton potential sourced by an annihilation hotspot."""
@@ -58,23 +60,14 @@ class AntimatterGravitonField:
             "avenue": "antimatter",
             "model": f"Yukawa graviton (λ={self._lam:g} m)",
             "speculative": True,
+            "speculative_components": ["gamma", "coupling", "screening"],
             "citation": "Yukawa-form ansatz for antimatter→graviton emission; not derived from EFT",
         }
 
-    def _displacement(self, r: np.ndarray) -> tuple[np.ndarray, float]:
-        d = np.asarray(r, dtype=float) - self._r0
-        R = float(np.sqrt(np.dot(d, d)))
-        if R == 0.0:
-            raise ValueError("probe position coincides with the graviton source")
-        return d, R
-
     def potential(self, r: np.ndarray) -> float:
-        _, R = self._displacement(r)
-        return float(-self._mp * self._g * self._gamma * np.exp(-R / self._lam) / R)
+        _, R = displacement(r, self._r0)
+        return self._mp * yukawa_potential(R, self._g, self._gamma, self._lam)
 
     def force(self, t: float, r: np.ndarray) -> np.ndarray:  # noqa: ARG002
-        d, R = self._displacement(r)
-        dphi_dR = (
-            self._g * self._gamma * np.exp(-R / self._lam) * (R + self._lam) / (self._lam * R**2)
-        )
-        return -self._mp * dphi_dR * (d / R)
+        d, R = displacement(r, self._r0)
+        return yukawa_force_on_probe(d, R, self._g, self._gamma, self._lam, self._mp)

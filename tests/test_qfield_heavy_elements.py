@@ -63,6 +63,22 @@ def test_radial_force_matches_symbolic() -> None:
         assert f_x == pytest.approx(f_sym(d, kappa, mu, eps), rel=1e-12)
 
 
+def test_unsoftened_lattice_at_site_raises() -> None:
+    """With softening=0, calling force/potential exactly at a lattice site raises."""
+    ff = HeavyElementLattice(sites=[[1.0, 0.0, 0.0]], strengths=[1.0], coupling=1.0, softening=0.0)
+    with pytest.raises(ValueError, match="softening"):
+        ff.force(0.0, np.array([1.0, 0.0, 0.0]))
+    with pytest.raises(ValueError, match="softening"):
+        ff.potential(np.array([1.0, 0.0, 0.0]))
+
+
+def test_softened_lattice_at_site_finite() -> None:
+    """With softening > 0 the potential at a site is finite and well-defined."""
+    ff = HeavyElementLattice(sites=[[1.0, 0.0, 0.0]], strengths=[1.0], coupling=1.0, softening=0.5)
+    val = ff.potential(np.array([1.0, 0.0, 0.0]))
+    assert np.isfinite(val)
+
+
 def test_force_is_negative_gradient_of_potential() -> None:
     """Numerical -∇U via central differences matches force()."""
     rng = np.random.default_rng(7)

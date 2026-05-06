@@ -38,6 +38,21 @@ def test_force_direction_along_axis() -> None:
     assert f[2] < 0.0  # attractive on the +z plate
 
 
+def test_force_uniform_in_space() -> None:
+    """Casimir force is a static body force — same vector everywhere in space."""
+    pp = ParallelPlateCasimir(area=1.0 * ureg.cm**2, separation=100.0 * ureg.nm)
+    f0 = pp.force(0.0, np.zeros(3))
+    f1 = pp.force(0.0, np.array([10.0, 10.0, 10.0]))
+    f2 = pp.force(123.4, np.array([-1e6, 0.0, 1e3]))
+    np.testing.assert_array_equal(f0, f1)
+    np.testing.assert_array_equal(f0, f2)
+
+
+def test_metadata_flags_not_for_trajectory() -> None:
+    pp = ParallelPlateCasimir(area=1.0 * ureg.cm**2, separation=100.0 * ureg.nm)
+    assert pp.metadata["applicable_for_trajectory"] is False
+
+
 def test_potential_independent_of_position() -> None:
     pp = ParallelPlateCasimir(area=1.0 * ureg.cm**2, separation=100.0 * ureg.nm)
     u1 = pp.potential(np.zeros(3))

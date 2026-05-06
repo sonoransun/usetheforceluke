@@ -9,6 +9,7 @@ from usetheforce.symbolic import (
     casimir_pressure_expr,
     casimir_pressure_lambdified,
     kinetic_energy_expr,
+    sb_energy_density_expr,
     total_energy_expr,
 )
 
@@ -37,3 +38,10 @@ def test_total_energy_includes_potential() -> None:
     U = sp.symbols("U", real=True)
     diff = sp.simplify(total_energy_expr - kinetic_energy_expr - U)
     assert diff == 0
+
+
+def test_qgp_stefan_boltzmann_form() -> None:
+    """Symbolic ε is (π²/30) g_eff (k_B T)⁴ / (ℏc)³."""
+    T_, g_, kB_, hb_, c_ = sp.symbols("T g_eff k_B hbar c", positive=True)
+    expected = sp.Rational(1, 30) * sp.pi**2 * g_ * (kB_ * T_) ** 4 / (hb_ * c_) ** 3
+    assert sp.simplify(sb_energy_density_expr - expected) == 0

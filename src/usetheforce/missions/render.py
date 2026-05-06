@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from usetheforce.missions.snapshot import Snapshot, SnapshotMatrix
+from usetheforce.missions.snapshot import SnapshotMatrix
 from usetheforce.missions.vehicles import Vehicle
+from usetheforce.protocol import ForceField
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -132,12 +133,12 @@ def snapshot_to_markdown(matrix: SnapshotMatrix, vehicles: dict[str, Vehicle]) -
         " are *stated*, not derived from any physical theory."
     )
     lines.append("")
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     for row in matrix.values():
         for mk, cell in row.items():
             if mk in seen:
                 continue
-            seen.add((mk,) if False else (mk, ""))
+            seen.add(mk)
             lines.append(f"### `{mk}`")
             lines.append("")
             for k, v in cell.assumptions.items():
@@ -205,5 +206,169 @@ def render_mission_table(results: Iterable) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _used(snapshot: Snapshot) -> Snapshot:
-    return snapshot
+def plot_vehicle_scale_strip(vehicles: dict[str, Vehicle]) -> Figure:
+    """Hero-style horizontal log-mass strip with the six vehicles labelled.
+
+    Labels are staggered above/below the marker line so adjacent decades don't
+    crowd each other.
+    """
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    fig, ax = plt.subplots(figsize=(13, 3.6))
+    masses = [v.mass_kg for v in vehicles.values()]
+    keys = list(vehicles.keys())
+    descriptions = [v.description for v in vehicles.values()]
+    ys = [0.5] * len(masses)
+    ax.plot(masses, ys, color="#cccccc", linewidth=2, zorder=1)
+    ax.scatter(masses, ys, s=180, c="#1f77b4", edgecolor="white", linewidth=2, zorder=3)
+    for i, (x, key, desc, mass) in enumerate(zip(masses, keys, descriptions, masses, strict=True)):
+        above = i % 2 == 0
+        offset = 38 if above else -52
+        va = "bottom" if above else "top"
+        ax.annotate(
+            f"{key}\n{desc}\n{mass:g} kg",
+            xy=(x, 0.5),
+            xytext=(0, offset),
+            textcoords="offset points",
+            ha="center",
+            va=va,
+            fontsize=9,
+            linespacing=1.25,
+        )
+    ax.set_xscale("log")
+    ax.set_xlim(masses[0] * 0.2, masses[-1] * 5)
+    ax.set_ylim(-1.0, 2.0)
+    ax.set_yticks([])
+    ax.set_xlabel("Dry mass (kg, log scale)")
+    ax.set_title("Vehicle scales evaluated — CubeSat to metropolitan city ship")
+    ax.grid(True, axis="x", which="both", ls=":", alpha=0.4)
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+def plot_twr_heatmap(matrix: SnapshotMatrix, vehicles: dict[str, Vehicle]) -> Figure:
+    """Vehicle × model thrust-to-weight heatmap (log10), with `n/a` for inapplicable cells."""
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    first_row = next(iter(matrix.values()))
+    model_keys = list(first_row.keys())
+    vehicle_keys = list(matrix.keys())
+
+    data = np.full((len(vehicle_keys), len(model_keys)), np.nan)
+    for i, vk in enumerate(vehicle_keys):
+        for j, mk in enumerate(model_keys):
+            cell = matrix[vk][mk]
+            if cell.applicable and cell.twr_1g > 0:
+                data[i, j] = float(np.log10(cell.twr_1g))
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    im = ax.imshow(data, aspect="auto", cmap="viridis", origin="upper")
+    ax.set_xticks(range(len(model_keys)))
+    ax.set_xticklabels(model_keys, rotation=30, ha="right", fontsize=8)
+    ax.set_yticks(range(len(vehicle_keys)))
+    ax.set_yticklabels([f"{vk}\n({vehicles[vk].mass_kg:g} kg)" for vk in vehicle_keys], fontsize=8)
+    for i in range(len(vehicle_keys)):
+        for j in range(len(model_keys)):
+            cell = matrix[vehicle_keys[i]][model_keys[j]]
+            if not cell.applicable:
+                ax.text(j, i, "n/a", ha="center", va="center", color="#666", fontsize=8)
+            else:
+                ax.text(
+                    j,
+                    i,
+                    f"{cell.twr_1g:.2g}",
+                    ha="center",
+                    va="center",
+                    color="white" if data[i, j] < -1.0 else "black",
+                    fontsize=8,
+                )
+    cbar = fig.colorbar(im, ax=ax, label="log₁₀(TWR @ 1 g)")
+    cbar.ax.tick_params(labelsize=8)
+    ax.set_title("Thrust-to-weight ratio across (vehicle × model)")
+    fig.tight_layout()
+    return fig
+
+
+def plot_falloff_vs_distance(
+    field_per_model: dict[str, ForceField],
+    r_min_m: float = 0.1,
+    r_max_m: float = 1e4,
+    n_points: int = 200,
+) -> Figure:
+    """|F(r)| vs distance on log–log axes, one line per applicable model.
+
+    ``field_per_model`` maps model_key → an object that exposes ``force(t, r)``.
+    The caller supplies adapter-built ``ForceField`` instances for one chosen
+    vehicle so the curves are directly comparable.
+    """
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    rs = np.logspace(np.log10(r_min_m), np.log10(r_max_m), n_points)
+    fig, ax = plt.subplots(figsize=(9, 6))
+    probe = np.zeros(3)
+    for mk, ff in field_per_model.items():
+        mags = np.empty(rs.size)
+        for i, r in enumerate(rs):
+            probe[0] = r
+            try:
+                f = ff.force(0.0, probe)
+                mags[i] = float(np.linalg.norm(f))
+            except (ValueError, ZeroDivisionError):
+                mags[i] = np.nan
+        ax.loglog(rs, mags, label=mk, linewidth=2)
+    ax.set_xlabel("Probe distance r (m)")
+    ax.set_ylabel("|F(r)| (N)")
+    ax.set_title("Force vs distance — model falloff laws under matched-power scaling")
+    ax.grid(True, which="both", ls=":", alpha=0.4)
+    ax.legend(fontsize=9, loc="best")
+    fig.tight_layout()
+    return fig
+
+
+def plot_mission_delta_v_bar(results: Iterable) -> Figure:
+    """Horizontal log-x Δv bars for each integrated mission, coloured by model."""
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    items = list(results)
+    if not items:
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "(no mission results)", ha="center", va="center")
+        return fig
+
+    labels = [f"{r.vehicle_key}\n× {r.model_key}\n[{r.mission_key}]" for r in items]
+    dvs = [r.delta_v_mps for r in items]
+    models = [r.model_key for r in items]
+    palette = plt.get_cmap("tab10")
+    unique_models = list(dict.fromkeys(models))
+    colors = {m: palette(i) for i, m in enumerate(unique_models)}
+
+    fig, ax = plt.subplots(figsize=(9, max(3.5, 0.85 * len(items))))
+    bars = ax.barh(
+        range(len(items)),
+        dvs,
+        color=[colors[m] for m in models],
+        edgecolor="black",
+        linewidth=0.5,
+    )
+    ax.set_yticks(range(len(items)))
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_xscale("log")
+    ax.set_xlabel("Achieved Δv (m/s, log scale)")
+    ax.set_title("Integrated-mission Δv across (vehicle × model)")
+    ax.grid(True, axis="x", which="both", ls=":", alpha=0.4)
+    for bar, dv in zip(bars, dvs, strict=True):
+        ax.text(
+            dv * 1.05,
+            bar.get_y() + bar.get_height() / 2,
+            f"{dv:.2e}",
+            va="center",
+            fontsize=8,
+        )
+    handles = [plt.Rectangle((0, 0), 1, 1, color=colors[m]) for m in unique_models]
+    ax.legend(handles, unique_models, loc="lower right", fontsize=8)
+    fig.tight_layout()
+    return fig

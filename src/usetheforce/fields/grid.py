@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 import numpy as np
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RegularGrid3D:
-    """Uniform 3D grid: origin (m), spacing (m), shape (Nx, Ny, Nz)."""
+    """Uniform 3D grid: origin (m), spacing (m), shape (Nx, Ny, Nz).
+
+    ``axes``, ``meshgrid``, and ``points`` are cached after first access — the
+    grid is frozen, so the cached arrays remain valid for the lifetime of the
+    instance. Callers that sample many force fields onto the same grid pay the
+    construction cost once.
+    """
 
     origin: tuple[float, float, float]
     spacing: tuple[float, float, float]
@@ -21,7 +28,8 @@ class RegularGrid3D:
         if any(n < 2 for n in self.shape):
             raise ValueError("shape components must be >= 2")
 
-    def axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    @cached_property
+    def _axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         ox, oy, oz = self.origin
         dx, dy, dz = self.spacing
         nx, ny, nz = self.shape
@@ -31,11 +39,22 @@ class RegularGrid3D:
             oz + dz * np.arange(nz),
         )
 
-    def meshgrid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        x, y, z = self.axes()
+    @cached_property
+    def _meshgrid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        x, y, z = self._axes
         return np.meshgrid(x, y, z, indexing="ij")
 
-    def points(self) -> np.ndarray:
-        """Flat (N, 3) array of grid-point coordinates in ij ordering."""
-        X, Y, Z = self.meshgrid()
+    @cached_property
+    def _points(self) -> np.ndarray:
+        """Flat (N, 3) array of grid-point coordinates in ij ordering. Cached."""
+        X, Y, Z = self._meshgrid
         return np.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=1)
+
+    def axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return self._axes
+
+    def meshgrid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return self._meshgrid
+
+    def points(self) -> np.ndarray:
+        return self._points

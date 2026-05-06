@@ -95,6 +95,22 @@ def test_destructive_interference_null() -> None:
         np.testing.assert_allclose(ff.force(0.0, r_vec), 0.0, atol=1e-14)
 
 
+def test_min_distance_guard() -> None:
+    """A non-zero ``min_distance_m`` rejects probes too close to any emitter."""
+    ff = StimulatedEmissionArray(
+        positions=[[0.0, 0.0, 0.0]],
+        amplitudes=[1.0],
+        phases=[0.0],
+        wavenumber=2.0,
+        min_distance_m=0.1,
+    )
+    # Outside the floor — fine.
+    assert np.all(np.isfinite(ff.force(0.0, np.array([0.2, 0.0, 0.0]))))
+    # Inside the floor — raises.
+    with pytest.raises(ValueError, match="min_distance"):
+        ff.force(0.0, np.array([0.05, 0.0, 0.0]))
+
+
 def test_force_is_negative_gradient_of_potential() -> None:
     """Numerical -∇U via central differences matches force()."""
     rng = np.random.default_rng(11)

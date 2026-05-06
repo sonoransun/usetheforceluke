@@ -48,12 +48,19 @@ class HeavyElementLattice:
             "avenue": "qfield",
             "model": f"heavy-element lattice (N={len(self._mu)} sites)",
             "speculative": True,
+            "speculative_components": ["coupling", "strengths", "site geometry"],
             "citation": "Plummer-softened multi-site dipole ansatz; not derived from nuclear physics",
         }
 
     def _displacements_and_norms(self, r: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         d = r[None, :] - self._sites  # (N, 3)
-        n = np.sqrt(np.einsum("ij,ij->i", d, d) + self._eps**2)  # (N,)
+        sq = np.einsum("ij,ij->i", d, d)
+        if self._eps == 0.0 and np.any(sq == 0.0):
+            raise ValueError(
+                "probe coincides with a lattice site and softening=0; "
+                "supply softening > 0 to avoid the singularity"
+            )
+        n = np.sqrt(sq + self._eps**2)  # (N,)
         return d, n
 
     def force(self, t: float, r: np.ndarray) -> np.ndarray:  # noqa: ARG002

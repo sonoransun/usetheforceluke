@@ -30,12 +30,21 @@ class TrajectoryResult:
         return 0.5 * self.mass * np.einsum("ij,ij->i", self.v, self.v)
 
     def total_energy(self, ff: ForceField) -> np.ndarray:
-        """Requires ``ff.potential`` to return floats (not None) for all points."""
-        ke = self.kinetic_energy()
-        pe = np.array([ff.potential(self.r[i]) for i in range(len(self.t))], dtype=object)
-        if any(p is None for p in pe):
+        """Kinetic + potential energy along the trajectory (J).
+
+        Requires ``ff.potential(r)`` to return finite floats at every sampled
+        point. Raises ``ValueError`` if the field doesn't expose a potential
+        (returns ``None``) or returns non-finite values (NaN, ±∞).
+        """
+        pe_list = [ff.potential(self.r[i]) for i in range(len(self.t))]
+        if any(p is None for p in pe_list):
             raise ValueError("ForceField does not provide a potential; total_energy is undefined")
-        return ke + pe.astype(float)
+        pe = np.asarray(pe_list, dtype=float)
+        if not np.all(np.isfinite(pe)):
+            raise ValueError(
+                "ForceField.potential returned non-finite values; total_energy is undefined"
+            )
+        return self.kinetic_energy() + pe
 
 
 def integrate(
@@ -50,7 +59,14 @@ def integrate(
     atol: float = 1e-12,
     **solve_ivp_kwargs: Any,
 ) -> TrajectoryResult:
-    """Integrate ``m r̈ = ff.force(t, r)`` from ``t_span[0]`` to ``t_span[1]``."""
+    """Integrate ``m r̈ = ff.force(t, r)`` from ``t_span[0]`` to ``t_span[1]``.
+
+    All inputs are SI: ``mass`` in kg, ``r0`` in m (shape (3,)), ``v0`` in m/s
+    (shape (3,)), ``t_span`` in seconds. ``n_eval`` is the number of evenly-spaced
+    output samples (the integrator may take many internal steps between them).
+    Defaults are tuned for orbital-class problems: 8th-order Dormand–Prince
+    (``DOP853``) with ``rtol=1e-10`` and ``atol=1e-12``.
+    """
     if mass <= 0:
         raise ValueError("mass must be positive")
     r0_arr = np.asarray(r0, dtype=float)

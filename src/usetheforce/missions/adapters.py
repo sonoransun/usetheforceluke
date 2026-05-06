@@ -26,6 +26,8 @@ from usetheforce.casimir import ParallelPlateCasimir, ScaledCasimir
 from usetheforce.missions.vehicles import Vehicle
 from usetheforce.protocol import ForceField
 from usetheforce.qfield import HeavyElementLattice, ShapedFieldAnsatz, StimulatedEmissionArray
+from usetheforce.qgp import QGPGravitonField, QuarkGluonPlasmaSource
+from usetheforce.qgp.source import T_C_MEV
 from usetheforce.units import ureg
 
 # Reference probe velocity used to convert "power dissipated" → "force": P = F · v.
@@ -232,6 +234,95 @@ def antimatter_graviton_adapter(
     )
 
 
+def qgp_graviton_adapter(
+    vehicle: Vehicle,
+    power: float,
+    r_ref_m: float = 1.0,
+    screening_m: float = 1.0e6,
+    coupling_g: float = 1.0,
+    temperature_mev: float = 200.0,
+    volume_scale_m3_per_kg_third: float = 1.0,
+) -> AdapterResult:
+    """QGP-sourced graviton field. Anchored ε(T) × speculative graviton coupling.
+
+    Volume scales with vehicle.mass^(1/3) so larger ships have larger QGP cores.
+    Temperature is fixed at 200 MeV (well above T_c ≈ 155 MeV) so g_eff sits at
+    its plateau.
+
+    The *only* speculative knob this adapter rescales is ``graviton_yield``;
+    ``containment_efficiency`` is held at 1.0 by convention so the speculative
+    leap is a single number, traceable in the assumptions block.
+    """
+    if temperature_mev <= T_C_MEV:
+        raise ValueError(
+            f"temperature_mev={temperature_mev} must exceed T_c={T_C_MEV} MeV (deconfinement)"
+        )
+    target_force = power / V_REF
+    volume_m3 = volume_scale_m3_per_kg_third * vehicle.mass_kg ** (1 / 3)
+    temperature_k = temperature_mev * 1e6 * 1.602176634e-19 / 1.380649e-23  # MeV→K
+    # Convention: containment_efficiency stays at 1.0; we calibrate ONLY graviton_yield.
+    natural_source = QuarkGluonPlasmaSource(
+        volume=volume_m3,
+        temperature=temperature_k,
+        containment_efficiency=1.0,
+        graviton_yield=1.0,
+    )
+    # Yukawa pre-factor at r_ref: |F| = m_p · g · Γ · pre(r_ref).
+    pre = (
+        coupling_g
+        * math.exp(-r_ref_m / screening_m)
+        * (r_ref_m + screening_m)
+        / (screening_m * r_ref_m**2)
+    )
+    desired_gamma = target_force / (vehicle.mass_kg * pre)
+    natural_gamma = natural_source.graviton_emission_rate()
+    if natural_gamma <= 0:
+        raise RuntimeError("QGP source produced zero graviton rate at chosen T/V")
+    yield_factor = desired_gamma / natural_gamma
+    # Rebuild the source with the calibrated yield.
+    source = QuarkGluonPlasmaSource(
+        volume=volume_m3,
+        temperature=temperature_k,
+        containment_efficiency=1.0,
+        graviton_yield=yield_factor,
+    )
+    assert source.containment_efficiency == 1.0, (
+        "containment_efficiency must remain 1.0 — graviton_yield is the only calibration knob"
+    )
+    field = QGPGravitonField(
+        source=source,
+        source_position=np.zeros(3),
+        screening_length=screening_m,
+        coupling_g=coupling_g,
+        probe_mass=vehicle.mass_kg,
+    )
+    return AdapterResult(
+        field=field,
+        r_ref_m=r_ref_m,
+        applicable=True,
+        reason="",
+        assumptions={
+            "scaling": "graviton_yield chosen so |F(r=r_ref)| = power / V_REF",
+            "r_ref_m": r_ref_m,
+            "screening_lambda_m": screening_m,
+            "coupling_g": coupling_g,
+            "temperature_MeV": temperature_mev,
+            "volume_m3": volume_m3,
+            "qgp_energy_density_J_per_m3": source.energy_density(),
+            "qgp_total_energy_J": source.total_energy(),
+            "graviton_yield_eta": yield_factor,
+            "annihilation_rate_gamma": field.gamma,
+            "v_ref_mps": V_REF,
+            "vehicle_power_W": power,
+            "vehicle_mass_kg": vehicle.mass_kg,
+            "anchored_components": "Stefan–Boltzmann ε(T) with lattice-QCD g_eff(T)",
+            "speculative_components": (
+                "graviton emission coupling, Yukawa potential form, conversion to thrust"
+            ),
+        },
+    )
+
+
 ALL_ADAPTERS: dict[str, Adapter] = {
     "parallel_plate_casimir": parallel_plate_casimir_adapter,
     "scaled_casimir": scaled_casimir_adapter,
@@ -239,4 +330,5 @@ ALL_ADAPTERS: dict[str, Adapter] = {
     "heavy_element_lattice": heavy_element_lattice_adapter,
     "stimulated_emission_array": stimulated_emission_array_adapter,
     "antimatter_graviton": antimatter_graviton_adapter,
+    "qgp_graviton": qgp_graviton_adapter,
 }

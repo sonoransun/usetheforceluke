@@ -34,6 +34,7 @@ class ShapedFieldAnsatz:
             "avenue": "qfield",
             "model": "Gaussian-well ansatz",
             "speculative": True,
+            "speculative_components": ["amplitude", "sigma", "center"],
             "citation": "parametric ansatz only; not a physical model",
         }
 

@@ -19,9 +19,15 @@ Q_ = ureg.Quantity
 def to_si(quantity: Any, expected_units: str) -> float | np.ndarray:
     """Convert ``quantity`` to SI ``expected_units`` and return a bare float/ndarray.
 
-    Raises ``pint.DimensionalityError`` when dimensions disagree. Plain
-    floats/ndarrays pass through (treated as already-SI), so kernels can be
-    called with either Quantities or raw numbers.
+    Behaviour:
+
+    - ``pint.Quantity`` → converted to ``expected_units`` and stripped to its
+      magnitude (raises ``pint.DimensionalityError`` if dimensions disagree).
+      A list/tuple magnitude is converted to ``np.ndarray``; a scalar magnitude
+      is returned as-is.
+    - Plain ``float``, ``int``, ``np.ndarray``, ``list``/``tuple`` → returned
+      unchanged (treated as already-SI). This lets numerical kernels be called
+      with either pint Quantities or raw numbers without branching.
     """
     if isinstance(quantity, pint.Quantity):
         converted = quantity.to(expected_units)

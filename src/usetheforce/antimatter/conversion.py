@@ -15,7 +15,13 @@ import numpy as np
 
 
 class AntimatterCounterGravity:
-    """Counter-gravity force = -ε · m · g(r), where g is a supplied background field."""
+    """Counter-gravity force = -ε · m · g(r), where g is a supplied background field.
+
+    ``potential(r)`` returns ``None`` by design: the supplied ``background_g``
+    may be non-conservative or path-dependent, and the model declines to claim
+    a probe-position potential without knowing the field. ``total_energy`` is
+    therefore unavailable for trajectories using this model.
+    """
 
     metadata: dict[str, Any]
 
@@ -36,6 +42,7 @@ class AntimatterCounterGravity:
             "avenue": "antimatter",
             "model": f"counter-gravity ansatz (ε={self._eps})",
             "speculative": True,
+            "speculative_components": ["efficiency"],
             "citation": "speculative parametric model; no underlying derivation",
         }
 

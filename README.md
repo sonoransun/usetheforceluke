@@ -191,6 +191,18 @@ Above `T_c + 2 ΔT` the curve sits on the QGP plateau — that's where the missi
 
 PyVista is the canonical *"watch the field evolve while the craft moves through it"* tool — `animate_trajectory_in_field` renders glyph fields, energy isosurfaces, and the moving craft together as a GIF or interactive scene.
 
+### 2D animations — thrust + trajectory
+
+For 2D capability storytelling, `viz/control_animations.py` produces matplotlib `FuncAnimation` GIFs of `LongRangeMissionResult` data — no extra system dependency beyond matplotlib + pillow. Two helpers, both regenerable via `python notebooks/05_animations.py`:
+
+`animate_long_range_mission` — animated 2×2 dashboard. Trajectory + thrust magnitude + power reserve + accumulated Δv, all synced by a moving cursor. The trajectory panel also carries a yellow line indicating instantaneous thrust direction at each frame:
+
+![Animated mission dashboard — heliocentric Earth → Mars cruise](assets/mission_dashboard.gif)
+
+`animate_model_comparison` — side-by-side runs of the same mission with different propulsion-capability levels, normalised onto a shared time axis. Below: the same Earth → Mars heliocentric cruise, three thrust ceilings (1 kN / 10 kN / 100 kN). The capability hierarchy is the point — at low thrust the trajectory barely curves; at high thrust it heads aggressively toward Mars:
+
+![Propulsion capability comparison — same mission, three thrust levels](assets/model_comparison.gif)
+
 ## Vehicle scales evaluated
 
 | Vehicle | Description | Mass | Power budget |

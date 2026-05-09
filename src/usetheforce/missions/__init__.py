@@ -10,6 +10,13 @@ this subpackage claims real efficiency.
 """
 
 from usetheforce.missions.adapters import ALL_ADAPTERS, AdapterResult
+from usetheforce.missions.long_range import (
+    LongRangeMissionResult,
+    heliocentric_cruise,
+    interstellar_brachistochrone,
+    leo_orbit_modification,
+    lunar_stationkeep,
+)
 from usetheforce.missions.missions import MISSIONS, MissionResult, run_mission
 from usetheforce.missions.snapshot import Snapshot, SnapshotMatrix, evaluate_snapshot
 from usetheforce.missions.vehicles import VEHICLES, Vehicle, power_budget
@@ -19,11 +26,16 @@ __all__ = [
     "MISSIONS",
     "VEHICLES",
     "AdapterResult",
+    "LongRangeMissionResult",
     "MissionResult",
     "Snapshot",
     "SnapshotMatrix",
     "Vehicle",
     "evaluate_snapshot",
+    "heliocentric_cruise",
+    "interstellar_brachistochrone",
+    "leo_orbit_modification",
+    "lunar_stationkeep",
     "power_budget",
     "run_mission",
 ]

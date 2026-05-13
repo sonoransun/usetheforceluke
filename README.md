@@ -6,14 +6,15 @@
 
 ## What this is
 
-Inspired by [Avi Loeb's question](https://avi-loeb.medium.com/can-the-vacuum-drive-fuel-free-propulsion-e4983a86419c) — *can the vacuum drive fuel-free propulsion?* — this project explores four avenues toward gravity nullification:
+Inspired by [Avi Loeb's question](https://avi-loeb.medium.com/can-the-vacuum-drive-fuel-free-propulsion-e4983a86419c) — *can the vacuum drive fuel-free propulsion?* — this project explores five avenues toward gravity nullification:
 
 - **Casimir effect** scaled to useful force ranges, trading fuel efficiency for propulsion power
 - **Exotic quantum-field shaping** via radioactive decay, stimulated emission, and fine nano-structure emitters
 - **Antimatter conversion** of energy directly into counter-gravity forces
 - **Quark–gluon plasma** as a confined power source feeding graviton emission
+- **Blackhole explorer** — Schwarzschild gravity (anchored) paired with an exceptionally-speculative counter-drive, to *quantify the propulsion shortfall* near an event horizon
 
-The premises are deliberately speculative; the math, units, and conservation checks are not. One real-physics anchor (parallel-plate Casimir) keeps the framework calibrated; everything else is a clearly-marked parametric ansatz tested against its known limits.
+The premises are deliberately speculative; the math, units, and conservation checks are not. Two real-physics anchors (parallel-plate Casimir and Schwarzschild geometry) keep the framework calibrated; everything else is a clearly-marked parametric ansatz tested against its known limits.
 
 ## Architecture at a glance
 
@@ -21,7 +22,7 @@ The whole framework hangs off one protocol: every propulsion model is a `ForceFi
 
 ```mermaid
 flowchart LR
-    subgraph Avenues["Eight force models"]
+    subgraph Avenues["Ten force models"]
         C1["ParallelPlateCasimir<br/><i>real physics</i>"]
         C2[ScaledCasimir]
         Q1[ShapedFieldAnsatz]
@@ -30,6 +31,8 @@ flowchart LR
         A1[AntimatterCounterGravity]
         A2[AntimatterGravitonField]
         QG["QGPGravitonField<br/><i>anchored ε(T)<br/>+ speculative coupling</i>"]
+        BH1["SchwarzschildGravity<br/><i>anchored<br/>Schwarzschild geometry</i>"]
+        BH2["BlackHoleCounterDrive<br/><i>exceptionally speculative</i>"]
     end
     P{{"ForceField protocol<br/>force(t, r), potential(r), metadata"}}
     C1 --> P
@@ -40,6 +43,8 @@ flowchart LR
     A1 --> P
     A2 --> P
     QG --> P
+    BH1 --> P
+    BH2 --> P
     P --> T["trajectories.integrate<br/>(scipy DOP853)"]
     P --> S["fields.sample_force_field<br/>(grid → vector field)"]
     T --> R[TrajectoryResult]
@@ -70,6 +75,8 @@ classDiagram
     class AntimatterCounterGravity
     class AntimatterGravitonField
     class QGPGravitonField
+    class SchwarzschildGravity
+    class BlackHoleCounterDrive
     ForceField <|.. ParallelPlateCasimir
     ForceField <|.. ScaledCasimir
     ForceField <|.. ShapedFieldAnsatz
@@ -78,6 +85,8 @@ classDiagram
     ForceField <|.. AntimatterCounterGravity
     ForceField <|.. AntimatterGravitonField
     ForceField <|.. QGPGravitonField
+    ForceField <|.. SchwarzschildGravity
+    ForceField <|.. BlackHoleCounterDrive
 
     class QuarkGluonPlasmaSource {
         +volume_m3, temperature_K
@@ -85,6 +94,7 @@ classDiagram
         +graviton_emission_rate() float
     }
     QGPGravitonField o-- QuarkGluonPlasmaSource : composed of
+    BlackHoleCounterDrive o-- SchwarzschildGravity : wraps background
 
     class TrajectoryResult {
         +t, r, v: ndarray
@@ -109,13 +119,14 @@ classDiagram
     MissionResult --> TrajectoryResult
 ```
 
-## The eight force models
+## The ten force models
 
 **Anchored** (textbook physics, used as calibration):
 
 | Avenue | Model | Anchor |
 | --- | --- | --- |
 | `casimir` | `ParallelPlateCasimir` | textbook Casimir 1948 formula `F/A = -π²ℏc/(240a⁴)` |
+| `blackhole` | `SchwarzschildGravity` | Schwarzschild 1916; `r_s = 2GM/c²`, Newtonian potential `-GMm/R` (optional GR hover factor `1/√(1−r_s/R)`) |
 
 **Speculative** (clearly-marked parametric ansätze, each pinned by a known limit):
 
@@ -128,6 +139,7 @@ classDiagram
 | `antimatter` | `AntimatterCounterGravity` | local cancellation of supplied background `g(r)` |
 | `antimatter` | `AntimatterGravitonField` | Yukawa `-g·Γ·e^{-r/λ}/r`; `λ → ∞` limit → 1/r² |
 | `qgp` | `QGPGravitonField` | Stefan–Boltzmann `ε(T) = (π²/30)·g_eff(T)·(k_BT)⁴/(ℏc)³` (*anchored*, lattice-flavoured) × Yukawa graviton (*speculative* coupling) |
+| `blackhole` | `BlackHoleCounterDrive` | local cancellation of supplied Schwarzschild `g(r)`, capped at `η ≤ 1` — *exceptionally* speculative; exists to quantify the shortfall |
 
 Every speculative model carries `metadata["speculative"] = True` and a `metadata["speculative_components"]` list naming the speculative knobs; tests assert these markers so they can't be silently dropped during refactors.
 
@@ -318,6 +330,28 @@ The standout: a `city_ship × antimatter_graviton` 1-year free burn reaches **5.
 | `stationkeep_300s` | generation_ship | antimatter_graviton | 2 500 | 0.033 | 9.7 × 10⁸ |
 | `year_burn_free` | city_ship | antimatter_graviton | **5.12 × 10⁶** | 0.017 | **5.1 × 10¹⁵** |
 
+## Blackhole explorer — the propulsion shortfall near r_s
+
+The newest avenue is the framework's most extreme stress test. Schwarzschild geometry is anchored physics (`r_s = 2GM/c²`, Newtonian potential `-GMm/R`); on top of it, `SchwarzschildGravity` exposes an optional GR proper-acceleration "hover factor" `1/√(1−r_s/R)` that diverges as a stationary observer approaches the horizon. The companion `BlackHoleCounterDrive` is *exceptionally* speculative — no known mechanism couples directly to local `g` to produce an equal-and-opposite reaction force — and exists for one purpose: to quantify the gap between what a vehicle's power budget can supply and what hovering near the horizon would require.
+
+The headline plot shows that gap directly. Three vehicles span the catalogue (CubeSat → interplanetary cruiser → city ship); for each, the required Newtonian hover thrust `GMm/R²` and the GR-corrected counterpart are drawn against `R/r_s`. The dotted horizontal is supplied thrust (`power / V_REF` at the framework's 1 m/s reference). Even the metropolitan city ship at 162 MW sits orders of magnitude below the required curve, and the GR factor pushes it further away as `R → r_s`:
+
+![Required hover thrust vs R/r_s — Newtonian vs GR, three vehicles](assets/blackhole_required_thrust.png)
+
+The shortfall matrix presents the same information as `log₁₀(required / supplied)` over the full vehicle catalogue and a representative `R/r_s` sweep. Every cell is positive — every vehicle is in shortfall at every plotted radius — and the number tells you by how many orders of magnitude:
+
+![log₁₀(required / supplied) over (vehicle × R/r_s) — every cell is a shortfall](assets/blackhole_shortfall_matrix.png)
+
+Spatially, the Schwarzschild force on an xy-slice peaks at the horizon (red circle) and decays as `1/R²` outside. Inside the horizon the helper paints `NaN` — the model raises rather than silently producing garbage:
+
+![Schwarzschild |F(x, y, 0)| for a 10 M_sun BH, event horizon overlaid](assets/blackhole_field_heatmap.png)
+
+The integrated mission `event_horizon_stationkeep` builds a `ControlledThrustField` against the Schwarzschild background and runs the existing proportional-guidance controller. The animation below is the canonical 2×2 dashboard for a `city_ship` hovering at `R = 1.5 r_s`. The controller is granted a synthetic 10× the required hover thrust — a deliberate visualisation fudge so the dashboard shows a stable hover rather than an immediate plunge — and the supertitle quotes the actual supplied vs. required magnitudes alongside the shortfall ratio:
+
+![event_horizon_stationkeep dashboard — supplied vs. required thrust](assets/blackhole_stationkeep.gif)
+
+> This is the framework's most extreme stress test. Read the `BlackHoleCounterDrive.metadata["citation"]` and the adapter's `assumptions["hover_shortfall_ratio"]` before quoting any number from this section. `notebooks/06_blackhole_explorer.py` reproduces the thrust table and the GR comparison for arbitrary BH masses.
+
 ## Where speculative assumptions live
 
 ```mermaid
@@ -342,7 +376,9 @@ Three runnable scripts under `notebooks/`:
 | `01_extended_models.py` | Demos for the three newer models (heavy-element lattice, stimulated-emission array, antimatter graviton) |
 | `02_evaluation.py` | Full vehicle×model evaluation: writes `results/snapshot.md`, `accel_vs_mass.png`, per-mission `mission_*.{png,html}` |
 | `03_documentation_figures.py` | Regenerates the README's curated figures into `assets/` |
-| `04_technical_figures.py` | Regenerates the technical/physics figures into `assets/` (g_eff crossover, Yukawa sweep, conservation drift, field heatmaps) |
+| `04_technical_figures.py` | Regenerates the technical/physics figures into `assets/` (g_eff crossover, Yukawa sweep, conservation drift, field heatmaps, blackhole required-thrust / shortfall / field-heatmap) |
+| `05_animations.py` | Regenerates the README's animated GIFs (heliocentric dashboard, capability comparison, blackhole stationkeep) into `assets/` |
+| `06_blackhole_explorer.py` | Blackhole explorer: shortfall table + GR comparison; runs `event_horizon_stationkeep` and writes `assets/blackhole_explorer.png` |
 
 ## Working style
 
@@ -350,4 +386,4 @@ Three runnable scripts under `notebooks/`:
 - **Validate against known limits.** Every new force model needs a test recovering a textbook result — parallel-plate Casimir, Newtonian/Kepler, λ→∞ Yukawa, single-emitter intensity, and so on.
 - **Speculative ≠ sloppy.** The premises are speculative; the math, units, and conservation checks are not. Drift here defeats the entire point of the project.
 
-See `CLAUDE.md` for full conventions. Layout: `src/usetheforce/{casimir, qfield, antimatter, qgp}` (the avenues), `fields/` (grids + Laplacian), `trajectories/` (ODE integration), `symbolic/` (SymPy expressions), `viz/` (three tiers), `missions/` (vehicles, adapters, snapshot, mission runner).
+See `CLAUDE.md` for full conventions. Layout: `src/usetheforce/{casimir, qfield, antimatter, qgp, blackhole}` (the avenues), `fields/` (grids + Laplacian), `trajectories/` (ODE integration), `symbolic/` (SymPy expressions), `viz/` (three tiers), `missions/` (vehicles, adapters, snapshot, mission runner).

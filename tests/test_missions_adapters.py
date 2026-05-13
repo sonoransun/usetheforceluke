@@ -49,3 +49,37 @@ def test_casimir_variants_flagged_inapplicable(model_key: str) -> None:
     result = ALL_ADAPTERS[model_key](vehicle, vehicle.power_w)
     assert result.applicable is False
     assert result.reason  # non-empty explanation
+
+
+def test_blackhole_counter_drive_adapter_registered() -> None:
+    """Blackhole adapter is in the registry and exposes BH-specific assumptions."""
+    assert "blackhole_counter_drive" in ALL_ADAPTERS
+    vehicle = VEHICLES["city_ship"]
+    result = ALL_ADAPTERS["blackhole_counter_drive"](vehicle, vehicle.power_w)
+    assert result.applicable is True
+    assert result.r_ref_m > 0
+    a = result.assumptions
+    for key in (
+        "bh_mass_kg",
+        "bh_mass_solar",
+        "r_s_m",
+        "r_ref_m",
+        "hover_radius_factor",
+        "efficiency_eta",
+        "required_hover_force_n",
+        "supplied_force_n",
+        "hover_shortfall_ratio",
+    ):
+        assert key in a, f"missing assumption: {key}"
+
+
+def test_blackhole_counter_drive_force_at_reference_matches_power_target() -> None:
+    """For realistic vehicles η ≪ 1; the supplied counter-thrust = power / V_REF."""
+    vehicle = VEHICLES["city_ship"]
+    result = ALL_ADAPTERS["blackhole_counter_drive"](vehicle, vehicle.power_w)
+    r_probe = np.array([result.r_ref_m, 0.0, 0.0])
+    f_mag = float(np.linalg.norm(result.field.force(0.0, r_probe)))
+    expected = vehicle.power_w  # V_REF = 1 m/s
+    assert f_mag == pytest.approx(expected, rel=1e-6)
+    # Shortfall ratio is huge — the headline finding.
+    assert result.assumptions["hover_shortfall_ratio"] > 1e3

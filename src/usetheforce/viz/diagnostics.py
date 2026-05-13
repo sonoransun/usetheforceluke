@@ -16,8 +16,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from usetheforce._schwarzschild import G_NEWTON, gr_hover_factor, schwarzschild_radius
 from usetheforce.antimatter import AntimatterGravitonField
+from usetheforce.blackhole import SchwarzschildGravity
 from usetheforce.fields import RegularGrid3D
+from usetheforce.missions.vehicles import VEHICLES, Vehicle
 from usetheforce.protocol import ForceField
 from usetheforce.qgp.source import (
     DELTA_T_MEV,
@@ -27,6 +30,9 @@ from usetheforce.qgp.source import (
     g_effective,
 )
 from usetheforce.trajectories import integrate
+
+# Solar mass (kg) — match the adapter default.
+_M_SUN_KG: float = 1.98892e30
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -188,6 +194,182 @@ def plot_conservation_drift(
     ax.set_title("Energy conservation drift — DOP853 + rtol=1e-10 keeps drift < 1e-6")
     ax.grid(True, which="both", ls=":", alpha=0.4)
     ax.legend(fontsize=9, loc="best")
+    fig.tight_layout()
+    return fig
+
+
+def plot_blackhole_required_thrust(
+    bh_mass_solar: float = 10.0,
+    vehicle_keys: tuple[str, ...] = ("cubesat_6u", "interplanetary", "city_ship"),
+    ratio_min: float = 1.001,
+    ratio_max: float = 1000.0,
+    n: int = 200,
+    v_ref_mps: float = 1.0,
+) -> Figure:
+    """Required hover thrust vs. R/r_s for several vehicles, Newtonian + GR.
+
+    Each vehicle contributes three curves: Newtonian required thrust
+    ``G M m_probe / R²`` (solid), GR-corrected ``× 1/√(1 − r_s/R)`` (dashed),
+    and the horizontal supplied thrust ``power / V_REF`` (dotted). The GR curve
+    diverges as ``R → r_s⁺`` — the headline of the blackhole-explorer mode.
+    """
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    bh_mass_kg = bh_mass_solar * _M_SUN_KG
+    r_s = schwarzschild_radius(bh_mass_kg)
+    ratios = np.geomspace(ratio_min, ratio_max, n)
+    radii = ratios * r_s
+
+    fig, ax = plt.subplots(figsize=(9.5, 5.5))
+    palette = ("#1f77b4", "#d4a017", "#d62728", "#2ca02c", "#9467bd", "#8c564b")
+    for i, vk in enumerate(vehicle_keys):
+        veh: Vehicle = VEHICLES[vk]
+        f_newt = G_NEWTON * bh_mass_kg * veh.mass_kg / (radii * radii)
+        f_gr = np.array(
+            [f_newt[k] * gr_hover_factor(radii[k], r_s) for k in range(radii.size)]
+        )
+        supplied = veh.power_w / v_ref_mps
+        color = palette[i % len(palette)]
+        ax.loglog(ratios, f_newt, color=color, linewidth=2.0, label=f"{veh.key} — Newtonian")
+        ax.loglog(ratios, f_gr, color=color, linewidth=1.6, linestyle="--", label=f"{veh.key} — GR")
+        ax.axhline(supplied, color=color, linewidth=1, linestyle=":", alpha=0.6)
+    ax.set_xlabel("R / r_s  (log)")
+    ax.set_ylabel("Hover thrust required [N]  (log) — dotted = supplied (power / V_REF)")
+    ax.set_title(
+        f"Required hover thrust vs. radius — {bh_mass_solar:g} M_sun BH "
+        f"(r_s = {r_s / 1000.0:.2f} km)"
+    )
+    ax.grid(True, which="both", ls=":", alpha=0.4)
+    ax.legend(fontsize=8, loc="upper right", ncol=2)
+    fig.tight_layout()
+    return fig
+
+
+def plot_blackhole_field_heatmap(
+    bh_mass_solar: float = 10.0,
+    span_rs: float = 4.0,
+    probe_mass_kg: float = 1.0,
+    grid_points: int = 121,
+) -> Figure:
+    """2D ``|F(x, y, 0)|`` heatmap for a Schwarzschild source with the horizon overlaid.
+
+    The probe is treated as ``probe_mass_kg = 1 kg`` for absolute Newton labelling.
+    The event horizon ``R = r_s`` is drawn as a red circle. Inside the horizon the
+    helper paints a sentinel (NaN) so the singular region is visually distinct.
+    """
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    from matplotlib.colors import LogNorm  # noqa: PLC0415
+    from matplotlib.patches import Circle  # noqa: PLC0415
+
+    bh_mass_kg = bh_mass_solar * _M_SUN_KG
+    r_s = schwarzschild_radius(bh_mass_kg)
+    half = span_rs * r_s
+    spacing = (2.0 * half) / (grid_points - 1)
+    grid = RegularGrid3D(
+        origin=(-half, -half, -0.5 * spacing),
+        spacing=(spacing, spacing, spacing),
+        shape=(grid_points, grid_points, 3),
+    )
+    ff = SchwarzschildGravity(
+        mass_kg=bh_mass_kg,
+        probe_mass_kg=probe_mass_kg,
+        horizon_softening_m=0.0,
+    )
+    # Direct sampling — _slice_field_xy raises on probes inside the horizon; we
+    # populate manually so the inner region becomes NaN rather than blowing up.
+    nx, ny = grid.shape[0], grid.shape[1]
+    out = np.full((nx, ny), np.nan, dtype=float)
+    points = grid.points()
+    nz = grid.shape[2]
+    z_index = nz // 2
+    for i in range(nx):
+        for j in range(ny):
+            flat = (i * ny + j) * nz + z_index
+            probe = points[flat]
+            try:
+                out[i, j] = float(np.linalg.norm(ff.force(0.0, probe)))
+            except ValueError:
+                out[i, j] = np.nan
+
+    finite = out[np.isfinite(out) & (out > 0)]
+    vmin = float(finite.min()) if finite.size else 1e-12
+    vmax = float(finite.max()) if finite.size else 1.0
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    extent = (-half, half, -half, half)
+    im = ax.imshow(
+        out.T,
+        origin="lower",
+        extent=extent,
+        aspect="equal",
+        cmap="magma",
+        norm=LogNorm(vmin=vmin, vmax=vmax),
+    )
+    horizon = Circle((0.0, 0.0), r_s, fill=False, color="red", linewidth=2.0, label="event horizon r_s")
+    ax.add_patch(horizon)
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_title(
+        f"Schwarzschild |F| on a (x, y, 0) slice — {bh_mass_solar:g} M_sun "
+        f"(r_s = {r_s / 1000.0:.2f} km)"
+    )
+    ax.legend(loc="upper right", fontsize=9)
+    fig.colorbar(im, ax=ax, shrink=0.85, label="|F| (N, probe = 1 kg)")
+    fig.tight_layout()
+    return fig
+
+
+def plot_blackhole_shortfall_matrix(
+    bh_mass_solar: float = 10.0,
+    ratios: tuple[float, ...] = (1.001, 1.01, 1.1, 2.0, 10.0, 100.0),
+    v_ref_mps: float = 1.0,
+) -> Figure:
+    """Heatmap of ``log10(required / supplied)`` over (vehicle, R/r_s).
+
+    Rows are the six entries in ``VEHICLES`` in declared order (cubesat → city_ship);
+    columns are the supplied R/r_s ratios. Required thrust is the Newtonian
+    hover thrust ``G M m / R²``; supplied is ``power / V_REF``. The colour map
+    is sequential — every cell here is positive (a shortfall), often by many
+    orders of magnitude.
+    """
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    bh_mass_kg = bh_mass_solar * _M_SUN_KG
+    r_s = schwarzschild_radius(bh_mass_kg)
+    veh_keys = list(VEHICLES.keys())
+    matrix = np.empty((len(veh_keys), len(ratios)), dtype=float)
+    for i, vk in enumerate(veh_keys):
+        veh = VEHICLES[vk]
+        supplied = veh.power_w / v_ref_mps
+        for j, ratio in enumerate(ratios):
+            R = ratio * r_s
+            required = G_NEWTON * bh_mass_kg * veh.mass_kg / (R * R)
+            matrix[i, j] = np.log10(required / supplied)
+
+    fig, ax = plt.subplots(figsize=(8.5, 4.5))
+    im = ax.imshow(matrix, cmap="inferno", aspect="auto")
+    ax.set_xticks(range(len(ratios)))
+    ax.set_xticklabels([f"{r:g}" for r in ratios])
+    ax.set_yticks(range(len(veh_keys)))
+    ax.set_yticklabels(veh_keys)
+    ax.set_xlabel("R / r_s")
+    ax.set_ylabel("vehicle")
+    ax.set_title(
+        f"log₁₀(required_hover / supplied) — {bh_mass_solar:g} M_sun BH "
+        f"(every cell is a shortfall)"
+    )
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            ax.text(
+                j,
+                i,
+                f"{matrix[i, j]:+.1f}",
+                ha="center",
+                va="center",
+                color="white" if matrix[i, j] > matrix.mean() else "black",
+                fontsize=8,
+            )
+    fig.colorbar(im, ax=ax, shrink=0.85, label="log₁₀(shortfall ratio)")
     fig.tight_layout()
     return fig
 

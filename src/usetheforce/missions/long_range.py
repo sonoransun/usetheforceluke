@@ -1,6 +1,6 @@
 """Long-range mission profiles using the ``control/`` framework.
 
-Four named factories that build a ``ControlledThrustField``, integrate, and
+Five named factories that build a ``ControlledThrustField``, integrate, and
 return a ``LongRangeMissionResult`` carrying the trajectory plus thrust /
 power histories sampled at the trajectory output times.
 
@@ -10,6 +10,10 @@ Mission catalogue:
 2. ``heliocentric_cruise`` — Earth-orbit-relative start, target heliocentric radius.
 3. ``lunar_stationkeep`` — proportional guidance against Earth-Moon gravity.
 4. ``leo_orbit_modification`` — prograde burn under Earth central gravity.
+5. ``event_horizon_stationkeep`` — proportional guidance hovering at
+   ``hover_radius_factor · r_s`` of a Schwarzschild black hole. EXCEPTIONALLY
+   SPECULATIVE: even with arbitrarily large supplied thrust, the required hover
+   thrust diverges as ``R → r_s``.
 
 Each factory returns a ``LongRangeMissionResult`` (extends ``MissionResult``);
 the new visualisations in ``viz/control.py`` consume that.
@@ -23,6 +27,7 @@ from typing import Any
 
 import numpy as np
 
+from usetheforce._schwarzschild import G_NEWTON, gr_hover_factor, schwarzschild_radius
 from usetheforce.control.controllers import (
     BrachistochroneTransit,
     ConstantThrust,
@@ -337,6 +342,90 @@ def lunar_stationkeep(
             "target_position_m": target.tolist(),
             "initial_offset_m": initial_offset_m,
             "gain": gain,
+        },
+    )
+
+
+def event_horizon_stationkeep(
+    black_hole_mass_kg: float,
+    duration_s: float,
+    vehicle: Vehicle,
+    *,
+    hover_radius_factor: float = 1.10,
+    use_gr_hover_correction: bool = False,
+    gain: float = 1.0,
+    max_thrust_n: float | None = None,
+    initial_offset_m: float = 1.0,
+    n_eval: int = 200,
+) -> LongRangeMissionResult:
+    """Proportional-guidance station-keeping at ``hover_radius_factor · r_s``.
+
+    EXCEPTIONALLY SPECULATIVE. The Schwarzschild gravity is anchored physics
+    but the implicit assumption that arbitrary controllable thrust is available
+    is not. The required hover thrust grows like ``G M m / R²`` (Newtonian) or
+    diverges like ``1/sqrt(1 - r_s/R)`` (GR hover correction); near the horizon
+    no realistic vehicle suffices. The mission factory exists to *visualise*
+    that shortfall, not to claim feasibility.
+    """
+    if black_hole_mass_kg <= 0:
+        raise ValueError("black_hole_mass_kg must be positive")
+    if duration_s <= 0:
+        raise ValueError("duration_s must be positive")
+    if hover_radius_factor <= 1.0:
+        raise ValueError("hover_radius_factor must exceed 1.0 (must stay outside horizon)")
+    r_s = schwarzschild_radius(black_hole_mass_kg)
+    target_radius = hover_radius_factor * r_s
+    target = np.array([target_radius, 0.0, 0.0])
+    r0 = target + np.array([initial_offset_m, 0.0, 0.0])
+
+    def _schwarzschild_bg(r: np.ndarray) -> np.ndarray:
+        rn = float(np.linalg.norm(r))
+        if rn <= r_s:
+            # Inside or on the horizon — return a huge inward pull rather than NaN
+            # so the integrator drifts back outward. (We don't claim physics here.)
+            return -G_NEWTON * black_hole_mass_kg * r / max(r_s * r_s * r_s, 1e-300)
+        return -G_NEWTON * black_hole_mass_kg * r / (rn**3)
+
+    cap = max_thrust_n if max_thrust_n is not None else vehicle.power_w  # thrust at V_REF=1 m/s
+    controller = ProportionalGuidance(
+        target_position=target,
+        gain=gain,
+        max_thrust_n=float(cap),
+    )
+    field_obj = ControlledThrustField(
+        controller=controller,
+        mass_kg=vehicle.mass_kg,
+        background=_schwarzschild_bg,
+        power=VehiclePowerState(
+            initial_energy_j=vehicle.power_w * duration_s,
+            instantaneous_power_w=vehicle.power_w,
+        ),
+    )
+    # Newtonian-limit required hover thrust at target_radius — the shortfall headline.
+    required_hover_newtonian_n = (
+        G_NEWTON * black_hole_mass_kg * vehicle.mass_kg / (target_radius * target_radius)
+    )
+    required_hover_gr_n = required_hover_newtonian_n * gr_hover_factor(target_radius, r_s)
+    required_hover_n = required_hover_gr_n if use_gr_hover_correction else required_hover_newtonian_n
+    return _run_with_field(
+        name="event_horizon_stationkeep",
+        field_obj=field_obj,
+        mass_kg=vehicle.mass_kg,
+        r0=r0,
+        v0=np.zeros(3),
+        t_span=(0.0, duration_s),
+        n_eval=n_eval,
+        background_label="schwarzschild_central",
+        target_metric={
+            "black_hole_mass_kg": black_hole_mass_kg,
+            "schwarzschild_radius_m": r_s,
+            "hover_radius_factor": hover_radius_factor,
+            "target_radius_m": target_radius,
+            "required_hover_force_newtonian_n": required_hover_newtonian_n,
+            "required_hover_force_gr_n": required_hover_gr_n,
+            "required_hover_force_n": required_hover_n,
+            "supplied_thrust_cap_n": float(cap),
+            "use_gr_hover_correction": use_gr_hover_correction,
         },
     )
 

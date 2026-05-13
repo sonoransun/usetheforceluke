@@ -10,6 +10,7 @@ import pytest
 from usetheforce.missions import (
     VEHICLES,
     LongRangeMissionResult,
+    event_horizon_stationkeep,
     heliocentric_cruise,
     interstellar_brachistochrone,
     leo_orbit_modification,
@@ -99,3 +100,63 @@ def test_long_range_result_history_shapes_match() -> None:
     n = result.trajectory.t.size
     assert result.thrust_history_n.shape == (n, 3)
     assert result.power_history_j.shape == (n,)
+
+
+def test_event_horizon_stationkeep_runs_and_reports_shortfall() -> None:
+    """Pipeline runs end-to-end and the target_metric documents the hover shortfall."""
+    M_SUN = 1.98892e30
+    vehicle = VEHICLES["city_ship"]
+    result = event_horizon_stationkeep(
+        black_hole_mass_kg=10.0 * M_SUN,
+        duration_s=60.0,
+        vehicle=vehicle,
+        hover_radius_factor=1.5,
+        gain=1e-3,
+        max_thrust_n=1e15,
+        initial_offset_m=1.0,
+        n_eval=40,
+    )
+    assert isinstance(result, LongRangeMissionResult)
+    assert np.all(np.isfinite(result.trajectory.r))
+    assert result.trajectory.r.shape[0] == result.thrust_history_n.shape[0]
+    tm = result.target_metric
+    assert tm["schwarzschild_radius_m"] > 0
+    assert tm["target_radius_m"] == pytest.approx(1.5 * tm["schwarzschild_radius_m"])
+    # Required hover thrust >> any sane supplied thrust cap.
+    assert tm["required_hover_force_newtonian_n"] > tm["supplied_thrust_cap_n"]
+
+
+def test_event_horizon_stationkeep_validates() -> None:
+    vehicle = VEHICLES["smallsat"]
+    with pytest.raises(ValueError):
+        event_horizon_stationkeep(black_hole_mass_kg=0.0, duration_s=10.0, vehicle=vehicle)
+    with pytest.raises(ValueError):
+        event_horizon_stationkeep(black_hole_mass_kg=1e30, duration_s=0.0, vehicle=vehicle)
+    with pytest.raises(ValueError):
+        event_horizon_stationkeep(
+            black_hole_mass_kg=1e30,
+            duration_s=10.0,
+            vehicle=vehicle,
+            hover_radius_factor=1.0,
+        )
+
+
+def test_event_horizon_stationkeep_gr_correction_increases_required_thrust() -> None:
+    """At hover_radius_factor close to 1, GR-corrected hover thrust ≫ Newtonian."""
+    M_SUN = 1.98892e30
+    vehicle = VEHICLES["smallsat"]
+    result = event_horizon_stationkeep(
+        black_hole_mass_kg=M_SUN,
+        duration_s=10.0,
+        vehicle=vehicle,
+        hover_radius_factor=1.01,
+        use_gr_hover_correction=True,
+        gain=1e-3,
+        max_thrust_n=1e10,
+        n_eval=20,
+    )
+    tm = result.target_metric
+    # GR-corrected thrust ≈ Newtonian × 1/sqrt(1 - 1/1.01) = sqrt(101).
+    ratio = tm["required_hover_force_gr_n"] / tm["required_hover_force_newtonian_n"]
+    assert ratio == pytest.approx(math.sqrt(101.0), rel=1e-6)
+    assert tm["required_hover_force_n"] == tm["required_hover_force_gr_n"]

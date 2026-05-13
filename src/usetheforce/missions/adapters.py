@@ -21,7 +21,9 @@ from typing import Any
 
 import numpy as np
 
+from usetheforce._schwarzschild import G_NEWTON, schwarzschild_radius
 from usetheforce.antimatter import AntimatterGravitonField
+from usetheforce.blackhole import BlackHoleCounterDrive
 from usetheforce.casimir import ParallelPlateCasimir, ScaledCasimir
 from usetheforce.missions.vehicles import Vehicle
 from usetheforce.protocol import ForceField
@@ -29,6 +31,9 @@ from usetheforce.qfield import HeavyElementLattice, ShapedFieldAnsatz, Stimulate
 from usetheforce.qgp import QGPGravitonField, QuarkGluonPlasmaSource
 from usetheforce.qgp.source import T_C_MEV
 from usetheforce.units import ureg
+
+# Solar mass (kg) for sane defaults on the blackhole adapter.
+M_SUN_KG: float = 1.98892e30
 
 # Reference probe velocity used to convert "power dissipated" → "force": P = F · v.
 # Stated assumption; printed in the report.
@@ -323,6 +328,69 @@ def qgp_graviton_adapter(
     )
 
 
+def blackhole_counter_drive_adapter(
+    vehicle: Vehicle,
+    power: float,
+    bh_mass_solar: float = 10.0,
+    hover_radius_factor: float = 1.10,
+) -> AdapterResult:
+    """Speculative counter-drive vs. a Schwarzschild background. EXCEPTIONALLY SPECULATIVE.
+
+    Calibration picks ``efficiency = η`` so the supplied counter-thrust at the
+    reference radius ``r_ref = hover_radius_factor · r_s`` equals
+    ``power / V_REF``. The required *hover* thrust at ``r_ref`` (Newtonian) is
+    ``G M m_probe / r_ref²``; the ratio ``required / supplied`` is reported in
+    ``assumptions["hover_shortfall_ratio"]`` — the headline finding.
+    """
+    if bh_mass_solar <= 0:
+        raise ValueError("bh_mass_solar must be positive")
+    if hover_radius_factor <= 1.0:
+        raise ValueError("hover_radius_factor must exceed 1.0 (must stay outside horizon)")
+    bh_mass_kg = bh_mass_solar * M_SUN_KG
+    r_s = schwarzschild_radius(bh_mass_kg)
+    r_ref = hover_radius_factor * r_s
+    target_force = power / V_REF
+    # Newtonian hover thrust required at r_ref: |F| = G M m / r_ref²
+    required_force = G_NEWTON * bh_mass_kg * vehicle.mass_kg / (r_ref * r_ref)
+    if required_force <= 0:
+        raise RuntimeError("required hover force computed non-positive")
+    # η chosen so |F_drive(r_ref)| = target_force = ε · |F_required|.
+    raw_eta = target_force / required_force
+    eta = min(1.0, raw_eta)  # cap at perfect cancellation
+    field = BlackHoleCounterDrive.from_schwarzschild(
+        mass_kg=bh_mass_kg,
+        probe_mass_kg=vehicle.mass_kg,
+        efficiency=eta,
+    )
+    shortfall = required_force / target_force if target_force > 0 else float("inf")
+    return AdapterResult(
+        field=field,
+        r_ref_m=r_ref,
+        applicable=True,
+        reason="",
+        assumptions={
+            "scaling": "η chosen so |F_drive(r_ref)| = power / V_REF (capped at η ≤ 1)",
+            "bh_mass_solar": bh_mass_solar,
+            "bh_mass_kg": bh_mass_kg,
+            "r_s_m": r_s,
+            "r_ref_m": r_ref,
+            "hover_radius_factor": hover_radius_factor,
+            "efficiency_eta": eta,
+            "raw_eta_uncapped": raw_eta,
+            "supplied_force_n": target_force,
+            "required_hover_force_n": required_force,
+            "hover_shortfall_ratio": shortfall,
+            "v_ref_mps": V_REF,
+            "vehicle_power_W": power,
+            "vehicle_mass_kg": vehicle.mass_kg,
+            "speculative_components": (
+                "no known mechanism produces a force directly opposing local g; "
+                "η is reported only to quantify the gap, not to claim feasibility"
+            ),
+        },
+    )
+
+
 ALL_ADAPTERS: dict[str, Adapter] = {
     "parallel_plate_casimir": parallel_plate_casimir_adapter,
     "scaled_casimir": scaled_casimir_adapter,
@@ -331,4 +399,5 @@ ALL_ADAPTERS: dict[str, Adapter] = {
     "stimulated_emission_array": stimulated_emission_array_adapter,
     "antimatter_graviton": antimatter_graviton_adapter,
     "qgp_graviton": qgp_graviton_adapter,
+    "blackhole_counter_drive": blackhole_counter_drive_adapter,
 }

@@ -27,6 +27,8 @@ from typing import Any
 
 import numpy as np
 
+from scipy.constants import c as C_LIGHT
+
 from usetheforce._schwarzschild import G_NEWTON, gr_hover_factor, schwarzschild_radius
 from usetheforce.control.controllers import (
     BrachistochroneTransit,
@@ -38,6 +40,7 @@ from usetheforce.control.field import ControlledThrustField
 from usetheforce.control.power import VehiclePowerState
 from usetheforce.missions.missions import GM_EARTH, R_EARTH, MissionResult
 from usetheforce.missions.vehicles import Vehicle
+from usetheforce.negmass import BondiRunawayPair
 from usetheforce.trajectories import TrajectoryResult, integrate
 
 # Astronomical constants (anchored).
@@ -430,6 +433,148 @@ def event_horizon_stationkeep(
     )
 
 
+def event_horizon_stationkeep_with_buffer(
+    black_hole_mass_kg: float,
+    duration_s: float,
+    vehicle: Vehicle,
+    *,
+    buffer_mass_neg_kg: float,
+    buffer_radius_factor: float = 1.05,
+    hover_radius_factor: float = 1.10,
+    use_gr_hover_correction: bool = False,
+    gain: float = 1.0,
+    max_thrust_n: float | None = None,
+    initial_offset_m: float = 1.0,
+    n_eval: int = 200,
+) -> LongRangeMissionResult:
+    """Stationkeep with a *negative-mass buffer* placed between craft and horizon.
+
+    EXCEPTIONALLY SPECULATIVE — see ``event_horizon_stationkeep`` for the
+    underlying disclaimers. This variant places a point negative-mass element
+    of magnitude ``buffer_mass_neg_kg`` at ``buffer_radius_factor · r_s``,
+    strictly between the horizon at ``r_s`` and the craft's hover position at
+    ``hover_radius_factor · r_s``. The buffer's *repulsive* gravity (the
+    speculative leap; the math is sign-flipped Newtonian) pushes the craft
+    outward, partially offsetting the Schwarzschild attraction.
+
+    The background field passed to ``ControlledThrustField`` is the *sum* of
+    Schwarzschild attraction and buffer repulsion. The reported
+    ``target_metric`` augments the no-buffer version with:
+
+    - ``buffer_position_radius_m`` — where the buffer sits.
+    - ``buffer_repulsion_at_craft_n`` — magnitude of the buffer's outward force
+      on the craft at the hover position.
+    - ``net_required_hover_force_newtonian_n`` — ``max(0, F_BH − F_buffer)``.
+    - ``net_required_hover_force_gr_n`` — same with the GR hover factor applied.
+    - ``buffer_offset_ratio`` — ``F_buffer / F_BH`` (1.0 = perfect cancellation).
+    - ``augmented_shortfall_ratio`` — ``net_required / supplied_cap``.
+
+    A ``buffer_offset_ratio ≥ 1`` means the buffer alone can hold the craft up
+    (negative-mass propulsion); ``augmented_shortfall_ratio`` then drops to
+    zero. Read both numbers together: a small offset_ratio with a huge
+    shortfall is the realistic case.
+    """
+    if black_hole_mass_kg <= 0:
+        raise ValueError("black_hole_mass_kg must be positive")
+    if duration_s <= 0:
+        raise ValueError("duration_s must be positive")
+    if hover_radius_factor <= 1.0:
+        raise ValueError("hover_radius_factor must exceed 1.0 (must stay outside horizon)")
+    if not 1.0 < buffer_radius_factor < hover_radius_factor:
+        raise ValueError(
+            "buffer_radius_factor must lie strictly between 1.0 (the horizon) "
+            f"and hover_radius_factor ({hover_radius_factor})"
+        )
+    if buffer_mass_neg_kg <= 0:
+        raise ValueError("buffer_mass_neg_kg must be positive (it names the magnitude)")
+
+    r_s = schwarzschild_radius(black_hole_mass_kg)
+    target_radius = hover_radius_factor * r_s
+    buffer_radius = buffer_radius_factor * r_s
+    target = np.array([target_radius, 0.0, 0.0])
+    buffer_pos = np.array([buffer_radius, 0.0, 0.0])
+    r0 = target + np.array([initial_offset_m, 0.0, 0.0])
+    m_buf = float(buffer_mass_neg_kg)
+
+    def _schwarzschild_plus_buffer_bg(r: np.ndarray) -> np.ndarray:
+        rn = float(np.linalg.norm(r))
+        # Schwarzschild attraction (same clipped behaviour as the no-buffer factory).
+        if rn <= r_s:
+            g = -G_NEWTON * black_hole_mass_kg * r / max(r_s * r_s * r_s, 1e-300)
+        else:
+            g = -G_NEWTON * black_hole_mass_kg * r / (rn**3)
+        # Buffer repulsion: positive-mass craft pushed *away* from the negative-mass point.
+        d = r - buffer_pos
+        d_norm = float(np.linalg.norm(d))
+        if d_norm > 0:
+            g = g + G_NEWTON * m_buf * d / (d_norm**3)
+        return g
+
+    cap = max_thrust_n if max_thrust_n is not None else vehicle.power_w
+    controller = ProportionalGuidance(
+        target_position=target,
+        gain=gain,
+        max_thrust_n=float(cap),
+    )
+    field_obj = ControlledThrustField(
+        controller=controller,
+        mass_kg=vehicle.mass_kg,
+        background=_schwarzschild_plus_buffer_bg,
+        power=VehiclePowerState(
+            initial_energy_j=vehicle.power_w * duration_s,
+            instantaneous_power_w=vehicle.power_w,
+        ),
+    )
+    # Headline thrust budgets at the hover position.
+    required_hover_newtonian_n = (
+        G_NEWTON * black_hole_mass_kg * vehicle.mass_kg / (target_radius * target_radius)
+    )
+    delta = target_radius - buffer_radius  # >0 by construction
+    buffer_repulsion_at_craft_n = G_NEWTON * m_buf * vehicle.mass_kg / (delta * delta)
+    buffer_offset_ratio = buffer_repulsion_at_craft_n / required_hover_newtonian_n
+    net_required_newtonian_n = max(
+        0.0, required_hover_newtonian_n - buffer_repulsion_at_craft_n
+    )
+    gr_factor = gr_hover_factor(target_radius, r_s)
+    required_hover_gr_n = required_hover_newtonian_n * gr_factor
+    # GR correction applies to the Schwarzschild "hover effort" alone; subtract the
+    # (Newtonian, flat-spacetime) buffer offset to get the net hover thrust under GR.
+    net_required_gr_n = max(0.0, required_hover_gr_n - buffer_repulsion_at_craft_n)
+    net_required_n = net_required_gr_n if use_gr_hover_correction else net_required_newtonian_n
+    augmented_shortfall = (
+        net_required_n / float(cap) if cap > 0 and net_required_n > 0 else 0.0
+    )
+    return _run_with_field(
+        name="event_horizon_stationkeep_with_buffer",
+        field_obj=field_obj,
+        mass_kg=vehicle.mass_kg,
+        r0=r0,
+        v0=np.zeros(3),
+        t_span=(0.0, duration_s),
+        n_eval=n_eval,
+        background_label="schwarzschild_plus_negmass_buffer",
+        target_metric={
+            "black_hole_mass_kg": black_hole_mass_kg,
+            "schwarzschild_radius_m": r_s,
+            "hover_radius_factor": hover_radius_factor,
+            "target_radius_m": target_radius,
+            "buffer_radius_factor": buffer_radius_factor,
+            "buffer_position_radius_m": buffer_radius,
+            "buffer_mass_neg_kg": m_buf,
+            "buffer_repulsion_at_craft_n": buffer_repulsion_at_craft_n,
+            "required_hover_force_newtonian_n": required_hover_newtonian_n,
+            "required_hover_force_gr_n": required_hover_gr_n,
+            "net_required_hover_force_newtonian_n": net_required_newtonian_n,
+            "net_required_hover_force_gr_n": net_required_gr_n,
+            "net_required_hover_force_n": net_required_n,
+            "buffer_offset_ratio": buffer_offset_ratio,
+            "supplied_thrust_cap_n": float(cap),
+            "augmented_shortfall_ratio": augmented_shortfall,
+            "use_gr_hover_correction": use_gr_hover_correction,
+        },
+    )
+
+
 def leo_orbit_modification(
     initial_altitude_km: float,
     target_altitude_km: float,
@@ -483,3 +628,86 @@ def leo_orbit_modification(
     achieved_apoapsis_km = float((radii.max() - R_EARTH) / 1000.0)
     result.target_metric["achieved_apoapsis_km"] = achieved_apoapsis_km
     return result
+
+
+def bondi_runaway_cruise(
+    vehicle: Vehicle,
+    duration_s: float,
+    *,
+    m_negative_kg: float,
+    separation_m: float,
+    axis: tuple[float, float, float] = (1.0, 0.0, 0.0),
+    n_eval: int = 200,
+) -> LongRangeMissionResult:
+    """Bondi zero-net-mass pair as the *only* thrust source. EXCEPTIONALLY SPECULATIVE.
+
+    The composite craft starts at rest at the origin and experiences the
+    constant body force from ``BondiRunawayPair(m_negative_kg, separation_m,
+    craft_mass_kg=vehicle.mass_kg, axis=axis)``. There is no background gravity,
+    no power draw, and no controller — the Bondi pair self-accelerates from
+    nothing, which is the load-bearing pathology.
+
+    ``target_metric`` carries the headline triple:
+
+    - ``terminal_velocity_mps`` — ``|v(duration_s)|``.
+    - ``terminal_velocity_fraction_c`` — same divided by ``c``; flags ``> 1``
+      if the classical Bondi solution has overshot ``c`` (it always does
+      eventually).
+    - ``energy_non_conservation_J`` — kinetic energy gained from rest. With no
+      power input, this is the energy created out of nothing by the Bondi
+      premise. Test suite asserts this grows monotonically; do *not* "fix"
+      the model to make this vanish.
+    """
+    if duration_s <= 0:
+        raise ValueError("duration_s must be positive")
+    bondi = BondiRunawayPair(
+        m_negative_kg=m_negative_kg,
+        separation_m=separation_m,
+        craft_mass_kg=vehicle.mass_kg,
+        axis=axis,
+    )
+    traj = integrate(
+        bondi,
+        mass=vehicle.mass_kg,
+        r0=[0.0, 0.0, 0.0],
+        v0=[0.0, 0.0, 0.0],
+        t_span=(0.0, duration_s),
+        n_eval=n_eval,
+    )
+    constant_F = bondi.force(0.0, np.zeros(3))
+    thrust_history = np.tile(constant_F, (traj.t.size, 1))
+    # Bondi pair draws no power — keep the reserve full.
+    initial_energy = vehicle.power_w * duration_s
+    power_history = np.full(traj.t.size, initial_energy, dtype=float)
+
+    v_terminal = float(np.linalg.norm(traj.v[-1]))
+    ke_terminal = 0.5 * vehicle.mass_kg * float(np.dot(traj.v[-1], traj.v[-1]))
+    ke_initial = 0.5 * vehicle.mass_kg * float(np.dot(traj.v[0], traj.v[0]))
+    energy_nonconservation = ke_terminal - ke_initial
+    peak_thrust = float(np.linalg.norm(constant_F))
+    peak_g = peak_thrust / (vehicle.mass_kg * 9.80665)
+    return LongRangeMissionResult(
+        name="bondi_runaway_cruise",
+        trajectory=traj,
+        delta_v_mps=v_terminal,
+        burn_time_s=duration_s,
+        energy_used_j=0.0,
+        peak_g=peak_g,
+        thrust_history_n=thrust_history,
+        power_history_j=power_history,
+        controller_metadata={
+            "controller": "bondi_runaway_pair",
+            "vehicle_key": vehicle.key,
+            **dict(bondi.metadata),
+        },
+        background="free",
+        target_metric={
+            "terminal_velocity_mps": v_terminal,
+            "terminal_velocity_fraction_c": v_terminal / C_LIGHT,
+            "energy_non_conservation_J": energy_nonconservation,
+            "self_acceleration_mps2": bondi.self_acceleration_mps2,
+            "m_negative_kg": m_negative_kg,
+            "separation_m": separation_m,
+            "duration_s": duration_s,
+        },
+    )

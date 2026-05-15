@@ -12,7 +12,9 @@ this subpackage claims real efficiency.
 from usetheforce.missions.adapters import ALL_ADAPTERS, AdapterResult
 from usetheforce.missions.long_range import (
     LongRangeMissionResult,
+    bondi_runaway_cruise,
     event_horizon_stationkeep,
+    event_horizon_stationkeep_with_buffer,
     heliocentric_cruise,
     interstellar_brachistochrone,
     leo_orbit_modification,
@@ -32,8 +34,10 @@ __all__ = [
     "Snapshot",
     "SnapshotMatrix",
     "Vehicle",
+    "bondi_runaway_cruise",
     "evaluate_snapshot",
     "event_horizon_stationkeep",
+    "event_horizon_stationkeep_with_buffer",
     "heliocentric_cruise",
     "interstellar_brachistochrone",
     "leo_orbit_modification",

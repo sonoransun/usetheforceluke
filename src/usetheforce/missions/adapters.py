@@ -25,7 +25,9 @@ from usetheforce._schwarzschild import G_NEWTON, schwarzschild_radius
 from usetheforce.antimatter import AntimatterGravitonField
 from usetheforce.blackhole import BlackHoleCounterDrive
 from usetheforce.casimir import ParallelPlateCasimir, ScaledCasimir
+from usetheforce.composite import CompositeField
 from usetheforce.missions.vehicles import Vehicle
+from usetheforce.negmass import BondiRunawayPair
 from usetheforce.protocol import ForceField
 from usetheforce.qfield import HeavyElementLattice, ShapedFieldAnsatz, StimulatedEmissionArray
 from usetheforce.qgp import QGPGravitonField, QuarkGluonPlasmaSource
@@ -391,6 +393,82 @@ def blackhole_counter_drive_adapter(
     )
 
 
+def bondi_drive_adapter(
+    vehicle: Vehicle,
+    power: float,
+    separation_m: float = 1.0,
+    m_neg_fraction: float = 0.01,
+    background: ForceField | None = None,
+) -> AdapterResult:
+    """Negative-mass Bondi runaway pair bolted onto a positive-mass craft. EXCEPTIONALLY SPECULATIVE.
+
+    Models a rigid composite of ``+m_neg`` and ``-m_neg`` (each of magnitude
+    ``m_neg = m_neg_fraction · vehicle.mass_kg``) separated by ``separation_m``
+    along the craft's +x axis. The composite self-accelerates at
+    ``a = G · m_neg / d²`` regardless of payload mass. Resulting body force on
+    the vehicle is ``F = vehicle.mass_kg · a``.
+
+    The Bondi premise violates conservation of energy and momentum for the
+    centre of mass — this is the load-bearing pathology and is *not* hidden.
+    ``applicable=False`` mirrors the parallel-plate Casimir convention: the
+    composite force is internal to the rigid structure, exposed for analysis
+    rather than as a "thrust" the user is invited to budget against.
+
+    When ``background`` is supplied (any ``ForceField``), the returned field is
+    a ``CompositeField(BondiRunawayPair(...), background)`` — i.e. the Bondi
+    appendage augments an existing avenue's field. This is the composite-
+    structure use case: bolt the speculative appendage onto, say, an
+    ``AntimatterGravitonField`` already wired up by ``antimatter_graviton_adapter``.
+
+    The reported ``bondi_to_power_ratio`` is the ratio of free Bondi thrust to
+    ``power / V_REF`` — analogous to the blackhole adapter's
+    ``hover_shortfall_ratio`` but inverted in sign-of-the-headline.
+    """
+    if separation_m <= 0:
+        raise ValueError("separation_m must be positive")
+    if not 0.0 < m_neg_fraction <= 1.0:
+        raise ValueError("m_neg_fraction must lie in (0, 1]")
+    m_neg = m_neg_fraction * vehicle.mass_kg
+    bondi = BondiRunawayPair(
+        m_negative_kg=m_neg,
+        separation_m=separation_m,
+        craft_mass_kg=vehicle.mass_kg,
+        axis=(1.0, 0.0, 0.0),
+    )
+    a_bondi = bondi.self_acceleration_mps2
+    f_bondi = vehicle.mass_kg * a_bondi
+    f_target = power / V_REF
+    ratio = f_bondi / f_target if f_target > 0 else float("inf")
+    field: ForceField = bondi if background is None else CompositeField(bondi, background)
+    return AdapterResult(
+        field=field,
+        r_ref_m=separation_m,
+        applicable=False,
+        reason=(
+            "Bondi pair force is a rigid-composite body force (like parallel-plate "
+            "Casimir); exposed for analysis, not as a power-derived thrust"
+        ),
+        assumptions={
+            "scaling": "a = G · m_neg / d²; F = vehicle.mass_kg · a (independent of power)",
+            "separation_m": separation_m,
+            "m_neg_fraction": m_neg_fraction,
+            "m_negative_kg": m_neg,
+            "self_acceleration_mps2": a_bondi,
+            "bondi_force_n": f_bondi,
+            "supplied_thrust_at_v_ref_n": f_target,
+            "bondi_to_power_ratio": ratio,
+            "v_ref_mps": V_REF,
+            "vehicle_power_W": power,
+            "vehicle_mass_kg": vehicle.mass_kg,
+            "has_background_field": background is not None,
+            "speculative_components": (
+                "negative inertial mass; energy and momentum non-conservation are inherent, "
+                "not numerical artifacts — the test suite asserts the violation"
+            ),
+        },
+    )
+
+
 ALL_ADAPTERS: dict[str, Adapter] = {
     "parallel_plate_casimir": parallel_plate_casimir_adapter,
     "scaled_casimir": scaled_casimir_adapter,
@@ -400,4 +478,5 @@ ALL_ADAPTERS: dict[str, Adapter] = {
     "antimatter_graviton": antimatter_graviton_adapter,
     "qgp_graviton": qgp_graviton_adapter,
     "blackhole_counter_drive": blackhole_counter_drive_adapter,
+    "bondi_drive": bondi_drive_adapter,
 }

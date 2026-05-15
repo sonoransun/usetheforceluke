@@ -5,10 +5,17 @@ from __future__ import annotations
 import numpy as np
 import scipy.constants as sc
 
-from usetheforce import ForceField, ureg
+from usetheforce import CompositeField, ForceField, ureg
 from usetheforce.antimatter import AntimatterCounterGravity, AntimatterGravitonField
 from usetheforce.blackhole import BlackHoleCounterDrive, SchwarzschildGravity
 from usetheforce.casimir import ParallelPlateCasimir, ScaledCasimir
+from usetheforce.negmass import (
+    AntiChirpBinary,
+    BondiRunawayPair,
+    DipoleGravitonRadiator,
+    NegativeMassPointSource,
+    NegativeTotalMassBinary,
+)
 from usetheforce.qfield import HeavyElementLattice, ShapedFieldAnsatz, StimulatedEmissionArray
 from usetheforce.qgp import QGPGravitonField, QuarkGluonPlasmaSource
 
@@ -114,3 +121,72 @@ def test_blackhole_counter_drive_protocol() -> None:
     _check(drive, probe=(10 * rs, 0.0, 0.0))
     assert drive.metadata["speculative"] is True
     assert drive.metadata["avenue"] == "blackhole"
+
+
+def test_bondi_runaway_pair_protocol() -> None:
+    ff = BondiRunawayPair(m_negative_kg=1.0, separation_m=1.0, craft_mass_kg=1.0)
+    _check(ff)
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "negmass"
+    assert ff.metadata["applicable_for_trajectory"] is False
+
+
+def test_anti_chirp_binary_protocol() -> None:
+    ff = AntiChirpBinary(
+        m_positive_kg=10.0,
+        m_negative_kg=1.0,
+        separation_m=1.0e6,
+        probe_mass_kg=1.0,
+    )
+    _check(ff, probe=(1.0e4, 0.0, 0.0))
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "negmass"
+    assert ff.metadata["applicable_for_trajectory"] is True
+
+
+def test_negative_total_mass_binary_protocol() -> None:
+    ff = NegativeTotalMassBinary(
+        m_positive_kg=1.0, m_negative_kg=5.0, separation_m=1.0, craft_mass_kg=1.0
+    )
+    _check(ff)
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "negmass"
+    assert ff.metadata["applicable_for_trajectory"] is False
+
+
+def test_dipole_graviton_radiator_protocol() -> None:
+    ff = DipoleGravitonRadiator(
+        m_negative_kg=1.0,
+        separation_m=1.0,
+        wep_violation=0.5,
+        probe_mass_kg=1.0,
+    )
+    _check(ff, probe=(1.0, 0.5, 0.0))
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "negmass"
+    assert ff.metadata["applicable_for_trajectory"] is True
+
+
+def test_negative_mass_point_source_protocol() -> None:
+    ff = NegativeMassPointSource(m_negative_kg=1.0, probe_mass_kg=1.0)
+    _check(ff)
+    assert ff.metadata["speculative"] is True
+    assert ff.metadata["avenue"] == "negmass"
+    assert ff.metadata["applicable_for_trajectory"] is True
+
+
+def test_composite_field_protocol() -> None:
+    bondi = BondiRunawayPair(m_negative_kg=1.0, separation_m=1.0, craft_mass_kg=1.0)
+    graviton = AntimatterGravitonField(
+        source=(0.0, 0.0, 0.0),
+        gamma=1.0,
+        coupling=1.0,
+        screening=5.0,
+        probe_mass=1.0,
+    )
+    comp = CompositeField(bondi, graviton)
+    _check(comp)
+    assert comp.metadata["speculative"] is True
+    assert comp.metadata["avenue"] == "composite"
+    # AND semantic on applicable_for_trajectory: bondi=False ⇒ composite=False.
+    assert comp.metadata["applicable_for_trajectory"] is False

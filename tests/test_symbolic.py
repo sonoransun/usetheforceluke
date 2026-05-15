@@ -10,9 +10,14 @@ from scipy.constants import G as G_CONST
 from scipy.constants import c, hbar
 
 from usetheforce.symbolic import (
+    anti_chirp_dfdt_lambdified,
+    bondi_acceleration_expr,
+    bondi_acceleration_lambdified,
     casimir_pressure_expr,
     casimir_pressure_lambdified,
     gr_hover_factor_lambdified,
+    gw_dipole_power_lambdified,
+    gw_quadrupole_power_lambdified,
     kinetic_energy_expr,
     newtonian_force_radial_lambdified,
     sb_energy_density_expr,
@@ -88,3 +93,45 @@ def test_gr_hover_factor_diverges_near_horizon() -> None:
     assert f(1e6 * rs, M_sun, G_CONST, c) == pytest.approx(1.0, rel=1e-6)
     # Close: factor ≈ 1/sqrt(1 - 1/2) = sqrt(2)
     assert f(2 * rs, M_sun, G_CONST, c) == pytest.approx(math.sqrt(2.0), rel=1e-12)
+
+
+def test_bondi_acceleration_expr_form() -> None:
+    """a = G · m_neg / d²."""
+    d_s, m_s, G_s = sp.symbols("d m_neg G", positive=True)
+    expected = G_s * m_s / d_s**2
+    assert sp.simplify(bondi_acceleration_expr - expected) == 0
+
+
+def test_bondi_acceleration_lambdified_matches_numeric() -> None:
+    f = bondi_acceleration_lambdified()
+    for m_neg in (1.0, 1e6, 1e12):
+        for d in (0.1, 1.0, 100.0):
+            assert f(m_neg, d, G_CONST) == pytest.approx(
+                G_CONST * m_neg / d**2, rel=1e-12
+            )
+
+
+def test_anti_chirp_dfdt_is_negative_for_negative_chirp_mass() -> None:
+    f = anti_chirp_dfdt_lambdified()
+    # Negative M_c (anti-chirp) gives df/dt < 0.
+    val_neg = f(-1.0, 100.0, G_CONST, c)
+    assert val_neg < 0
+    # Positive M_c (normal chirp) gives df/dt > 0 — sanity check on the sign factor.
+    val_pos = f(1.0, 100.0, G_CONST, c)
+    assert val_pos > 0
+    # Magnitudes should match under sign flip.
+    assert val_neg == pytest.approx(-val_pos, rel=1e-12)
+
+
+def test_gw_quadrupole_power_lambdified_matches_formula() -> None:
+    f = gw_quadrupole_power_lambdified()
+    m1, m2, d = 1.0e3, 1.0e3, 1.0e6
+    expected = (32 / 5) * G_CONST**4 / c**5 * (m1 * m2) ** 2 * (m1 + m2) / d**5
+    assert f(m1, m2, d, G_CONST, c) == pytest.approx(expected, rel=1e-12)
+
+
+def test_gw_dipole_power_lambdified_matches_formula() -> None:
+    f = gw_dipole_power_lambdified()
+    m_neg, d, omega = 1.0e6, 1.0e3, 10.0
+    expected = (2 / 3) * G_CONST / c**3 * m_neg**2 * d**2 * omega**4
+    assert f(m_neg, d, omega, G_CONST, c) == pytest.approx(expected, rel=1e-12)

@@ -83,3 +83,50 @@ def test_blackhole_counter_drive_force_at_reference_matches_power_target() -> No
     assert f_mag == pytest.approx(expected, rel=1e-6)
     # Shortfall ratio is huge — the headline finding.
     assert result.assumptions["hover_shortfall_ratio"] > 1e3
+
+
+def test_bondi_drive_adapter_registered() -> None:
+    """Bondi drive is in the registry and exposes negmass-specific assumptions."""
+    assert "bondi_drive" in ALL_ADAPTERS
+    vehicle = VEHICLES["smallsat"]
+    result = ALL_ADAPTERS["bondi_drive"](vehicle, vehicle.power_w)
+    # Bondi pair is a rigid-composite body force, so applicable=False (like Casimir).
+    assert result.applicable is False
+    assert result.reason  # non-empty
+    a = result.assumptions
+    for key in (
+        "separation_m",
+        "m_neg_fraction",
+        "m_negative_kg",
+        "self_acceleration_mps2",
+        "bondi_force_n",
+        "supplied_thrust_at_v_ref_n",
+        "bondi_to_power_ratio",
+    ):
+        assert key in a, f"missing assumption: {key}"
+
+
+def test_bondi_drive_returns_composite_when_background_supplied() -> None:
+    """Passing a background ForceField yields a CompositeField composing both."""
+    from usetheforce import CompositeField
+    from usetheforce.missions.adapters import bondi_drive_adapter
+
+    vehicle = VEHICLES["smallsat"]
+    background_result = ALL_ADAPTERS["antimatter_graviton"](vehicle, vehicle.power_w)
+    result = bondi_drive_adapter(
+        vehicle, vehicle.power_w, background=background_result.field
+    )
+    assert isinstance(result.field, CompositeField)
+    assert len(result.field.components) == 2
+    assert result.assumptions["has_background_field"] is True
+
+
+def test_bondi_drive_reports_ratio_in_assumptions() -> None:
+    """bondi_to_power_ratio quantifies how much free thrust the appendage adds."""
+    vehicle = VEHICLES["smallsat"]
+    result = ALL_ADAPTERS["bondi_drive"](vehicle, vehicle.power_w)
+    ratio = result.assumptions["bondi_to_power_ratio"]
+    a = result.assumptions["self_acceleration_mps2"]
+    f_bondi = vehicle.mass_kg * a
+    f_target = vehicle.power_w / V_REF
+    assert ratio == pytest.approx(f_bondi / f_target, rel=1e-12)

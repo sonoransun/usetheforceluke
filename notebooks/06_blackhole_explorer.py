@@ -19,7 +19,11 @@ import numpy as np
 import scipy.constants as sc
 
 from usetheforce._schwarzschild import gr_hover_factor, schwarzschild_radius
-from usetheforce.missions import VEHICLES, event_horizon_stationkeep
+from usetheforce.missions import (
+    VEHICLES,
+    event_horizon_stationkeep,
+    event_horizon_stationkeep_with_buffer,
+)
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 M_SUN = 1.98892e30
@@ -133,3 +137,57 @@ try:
     print(f"matplotlib: wrote {out_path}")
 except ImportError as exc:
     print(f"matplotlib skipped: {exc}")
+
+
+# %% Extension: negative-mass buffer between craft and horizon.
+# EXCEPTIONALLY SPECULATIVE: the buffer's repulsive gravity (sign-flipped
+# Newtonian; requires the Bondi 1957 negative-inertial-mass premise) pushes
+# the craft outward, partially offsetting Schwarzschild attraction. The two
+# headline numbers are ``buffer_offset_ratio`` (how much of the BH pull the
+# buffer cancels — 1.0 = perfect cancellation) and ``augmented_shortfall_ratio``
+# (the *remaining* gap between supplied and required thrust after the buffer
+# is accounted for).
+print()
+print("=== Buffer extension: negative-mass element between craft and horizon ===")
+city = VEHICLES["city_ship"]
+print(f"vehicle: {city.key} | mass={city.mass_kg:.3e} kg, P={city.power_w:.3e} W")
+# Run a few buffer masses (held at the same buffer radius) and tabulate.
+HOVER_FACTOR = 50.0  # 50 r_s — safe integration window
+BUFFER_FACTOR = 49.0  # 1 r_s gap between buffer and craft
+BUFFER_MASSES_SOLAR = (1.0e-4, 1.0e-2, 1.0, 10.0, 100.0)
+print(
+    f"hover_radius_factor = {HOVER_FACTOR}, buffer_radius_factor = {BUFFER_FACTOR}, "
+    f"gap = {(HOVER_FACTOR - BUFFER_FACTOR):.2f} r_s"
+)
+print(
+    f"{'m_buf [M☉]':>12} | {'offset_ratio':>14} | "
+    f"{'net_req_GR [N]':>14} | {'shortfall':>14}"
+)
+for m_solar in BUFFER_MASSES_SOLAR:
+    buf_result = event_horizon_stationkeep_with_buffer(
+        black_hole_mass_kg=BH_MASS_KG,
+        duration_s=0.05,
+        vehicle=city,
+        buffer_mass_neg_kg=m_solar * M_SUN,
+        buffer_radius_factor=BUFFER_FACTOR,
+        hover_radius_factor=HOVER_FACTOR,
+        use_gr_hover_correction=True,
+        gain=1e-6,
+        max_thrust_n=1.0e15,
+        initial_offset_m=10.0,
+        n_eval=5,
+    )
+    tm_b = buf_result.target_metric
+    print(
+        f"{m_solar:>12.4g} | {tm_b['buffer_offset_ratio']:>14.4g} | "
+        f"{tm_b['net_required_hover_force_gr_n']:>14.4e} | "
+        f"{tm_b['augmented_shortfall_ratio']:>14.4g}"
+    )
+print()
+print(
+    "Read the table together: the buffer mass needed for full cancellation at "
+    f"these factors is roughly M_BH·(Δ/R_craft)² = 10·(1/50)² = {10 * (1 / 50) ** 2:g} M☉. "
+    "Below that, the buffer barely dents the shortfall; above it, the buffer is "
+    "doing all the work and the speculative leap has migrated from 'we have a "
+    "counter-drive' to 'we have a stellar-mass negative-mass appendage'."
+)

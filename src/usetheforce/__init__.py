@@ -8,9 +8,10 @@ Public API surface kept intentionally small. Subpackages:
 - ``viz``: matplotlib / plotly / PyVista rendering (lazy-imported).
 """
 
+from usetheforce.composite import CompositeField
 from usetheforce.protocol import ForceField
 from usetheforce.units import Q_, ureg
 
 __version__ = "0.0.1"
 
-__all__ = ["Q_", "ForceField", "__version__", "ureg"]
+__all__ = ["CompositeField", "ForceField", "Q_", "__version__", "ureg"]

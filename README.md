@@ -6,13 +6,14 @@
 
 ## What this is
 
-Inspired by [Avi Loeb's question](https://avi-loeb.medium.com/can-the-vacuum-drive-fuel-free-propulsion-e4983a86419c) — *can the vacuum drive fuel-free propulsion?* — this project explores five avenues toward gravity nullification:
+Inspired by [Avi Loeb's question](https://avi-loeb.medium.com/can-the-vacuum-drive-fuel-free-propulsion-e4983a86419c) — *can the vacuum drive fuel-free propulsion?* — this project explores six avenues toward gravity nullification:
 
 - **Casimir effect** scaled to useful force ranges, trading fuel efficiency for propulsion power
 - **Exotic quantum-field shaping** via radioactive decay, stimulated emission, and fine nano-structure emitters
 - **Antimatter conversion** of energy directly into counter-gravity forces
 - **Quark–gluon plasma** as a confined power source feeding graviton emission
-- **Blackhole explorer** — Schwarzschild gravity (anchored) paired with an exceptionally-speculative counter-drive, to *quantify the propulsion shortfall* near an event horizon
+- **Blackhole explorer** — Schwarzschild gravity (anchored) paired with an exceptionally-speculative counter-drive, to *quantify the propulsion shortfall* near an event horizon — extended with an optional **negative-mass buffer** between craft and horizon (see [Loeb 2024](https://avi-loeb.medium.com/negative-mass-binaries-generate-never-seen-before-gravitational-radiation-6f5fa8bfa68d))
+- **Negative-mass binaries** — Bondi runaway pair (Forward 2015 propulsion), anti-chirp gravitational radiation, unstable repulsive binaries, dipole-GW radiator (WEP violation), and a negative-mass point source primitive used by the blackhole buffer
 
 The premises are deliberately speculative; the math, units, and conservation checks are not. Two real-physics anchors (parallel-plate Casimir and Schwarzschild geometry) keep the framework calibrated; everything else is a clearly-marked parametric ansatz tested against its known limits.
 
@@ -22,7 +23,7 @@ The whole framework hangs off one protocol: every propulsion model is a `ForceFi
 
 ```mermaid
 flowchart LR
-    subgraph Avenues["Ten force models"]
+    subgraph Avenues["Fifteen force models"]
         C1["ParallelPlateCasimir<br/><i>real physics</i>"]
         C2[ScaledCasimir]
         Q1[ShapedFieldAnsatz]
@@ -119,7 +120,7 @@ classDiagram
     MissionResult --> TrajectoryResult
 ```
 
-## The ten force models
+## The fifteen force models
 
 **Anchored** (textbook physics, used as calibration):
 
@@ -140,6 +141,13 @@ classDiagram
 | `antimatter` | `AntimatterGravitonField` | Yukawa `-g·Γ·e^{-r/λ}/r`; `λ → ∞` limit → 1/r² |
 | `qgp` | `QGPGravitonField` | Stefan–Boltzmann `ε(T) = (π²/30)·g_eff(T)·(k_BT)⁴/(ℏc)³` (*anchored*, lattice-flavoured) × Yukawa graviton (*speculative* coupling) |
 | `blackhole` | `BlackHoleCounterDrive` | local cancellation of supplied Schwarzschild `g(r)`, capped at `η ≤ 1` — *exceptionally* speculative; exists to quantify the shortfall |
+| `negmass` | `BondiRunawayPair` | Bondi 1957 zero-net-mass pair, constant body acceleration `G·\|m_neg\|/d²` (Forward 2015 propulsion claim) |
+| `negmass` | `AntiChirpBinary` | positive-total-mass with one negative component → orbit *expands*, GW `df/dt < 0` (Peters–Mathews with sign reversal; Loeb 2024) |
+| `negmass` | `NegativeTotalMassBinary` | repulsive, unbound; raises at `t_break = π·√(d³/G\|M\|)` |
+| `negmass` | `DipoleGravitonRadiator` | dipole GW pattern `∝ cos θ` if equivalence principle fails for the negative-mass component |
+| `negmass` | `NegativeMassPointSource` | sign-flipped Newtonian point source; used by the blackhole-buffer extension to push the craft outward |
+
+Field arithmetic is one new public class, **`CompositeField(*components)`** — vector sum of any `ForceField` instances. Metadata aggregates: `speculative` is OR-over-components, `speculative_components` is the sorted set-union, `applicable_for_trajectory` is AND, and `potential()` returns `None` if any component is non-conservative.
 
 Every speculative model carries `metadata["speculative"] = True` and a `metadata["speculative_components"]` list naming the speculative knobs; tests assert these markers so they can't be silently dropped during refactors.
 
@@ -352,6 +360,10 @@ The integrated mission `event_horizon_stationkeep` builds a `ControlledThrustFie
 
 > This is the framework's most extreme stress test. Read the `BlackHoleCounterDrive.metadata["citation"]` and the adapter's `assumptions["hover_shortfall_ratio"]` before quoting any number from this section. `notebooks/06_blackhole_explorer.py` reproduces the thrust table and the GR comparison for arbitrary BH masses.
 
+### Extension: a negative-mass buffer between craft and horizon
+
+Inspired by [Loeb 2024](https://avi-loeb.medium.com/negative-mass-binaries-generate-never-seen-before-gravitational-radiation-6f5fa8bfa68d) on negative-mass binaries, the framework now supports a *composite-structure* augmentation of the blackhole explorer: place a negative-mass point element (`NegativeMassPointSource`) between the craft and the event horizon. Its repulsive gravity (sign-flipped Newtonian; requires the Bondi 1957 negative-inertial-mass premise) pushes the craft outward, partially cancelling Schwarzschild attraction. `event_horizon_stationkeep_with_buffer` reports four numbers worth reading together: `required_hover_force_newtonian_n` and `_gr_n` (the no-buffer reference), `buffer_repulsion_at_craft_n` (the outward push the buffer provides at the hover radius), and `buffer_offset_ratio = F_buf / F_BH` together with `augmented_shortfall_ratio = max(0, F_BH − F_buf) / supplied`. Roughly, the buffer mass needed for full cancellation at the hover radius `R_craft` with buffer–craft gap `Δ` is `m_buf ≈ M_BH · (Δ / R_craft)²`. Below that, the buffer barely dents the shortfall; above it, the speculative leap has migrated from "we have a counter-drive" to "we have a stellar-mass negative-mass appendage". The `06_blackhole_explorer.py` demo runs a buffer-mass scan that prints both ratios across six orders of magnitude.
+
 ## Where speculative assumptions live
 
 ```mermaid
@@ -378,7 +390,8 @@ Three runnable scripts under `notebooks/`:
 | `03_documentation_figures.py` | Regenerates the README's curated figures into `assets/` |
 | `04_technical_figures.py` | Regenerates the technical/physics figures into `assets/` (g_eff crossover, Yukawa sweep, conservation drift, field heatmaps, blackhole required-thrust / shortfall / field-heatmap) |
 | `05_animations.py` | Regenerates the README's animated GIFs (heliocentric dashboard, capability comparison, blackhole stationkeep) into `assets/` |
-| `06_blackhole_explorer.py` | Blackhole explorer: shortfall table + GR comparison; runs `event_horizon_stationkeep` and writes `assets/blackhole_explorer.png` |
+| `06_blackhole_explorer.py` | Blackhole explorer: shortfall table + GR comparison; runs `event_horizon_stationkeep` and writes `assets/blackhole_explorer.png`. Now also runs a *negative-mass buffer* scan via `event_horizon_stationkeep_with_buffer` |
+| `07_negative_mass_binaries.py` | Negmass demo: prints the speculative-components breakdown for each of the five sub-models, runs `bondi_runaway_cruise`, and demonstrates a `CompositeField` bolting a Bondi appendage onto an antimatter-graviton drive |
 
 ## Working style
 
@@ -386,4 +399,4 @@ Three runnable scripts under `notebooks/`:
 - **Validate against known limits.** Every new force model needs a test recovering a textbook result — parallel-plate Casimir, Newtonian/Kepler, λ→∞ Yukawa, single-emitter intensity, and so on.
 - **Speculative ≠ sloppy.** The premises are speculative; the math, units, and conservation checks are not. Drift here defeats the entire point of the project.
 
-See `CLAUDE.md` for full conventions. Layout: `src/usetheforce/{casimir, qfield, antimatter, qgp, blackhole}` (the avenues), `fields/` (grids + Laplacian), `trajectories/` (ODE integration), `symbolic/` (SymPy expressions), `viz/` (three tiers), `missions/` (vehicles, adapters, snapshot, mission runner).
+See `CLAUDE.md` for full conventions. Layout: `src/usetheforce/{casimir, qfield, antimatter, qgp, blackhole, negmass}` (the avenues), `composite.py` (`CompositeField`, the avenue-agnostic field-sum seam), `fields/` (grids + Laplacian), `trajectories/` (ODE integration), `symbolic/` (SymPy expressions), `viz/` (three tiers), `missions/` (vehicles, adapters, snapshot, mission runner).

@@ -14,6 +14,16 @@ from usetheforce.symbolic.heavy_elements import (
     heavy_element_potential_expr,
     heavy_element_potential_lambdified,
 )
+from usetheforce.symbolic.negative_mass import (
+    anti_chirp_dfdt_expr,
+    anti_chirp_dfdt_lambdified,
+    bondi_acceleration_expr,
+    bondi_acceleration_lambdified,
+    gw_dipole_power_expr,
+    gw_dipole_power_lambdified,
+    gw_quadrupole_power_expr,
+    gw_quadrupole_power_lambdified,
+)
 from usetheforce.symbolic.qgp import (
     g_effective_expr,
     g_effective_lambdified,
@@ -39,6 +49,10 @@ from usetheforce.symbolic.stimulated_emission import (
 )
 
 __all__ = [
+    "anti_chirp_dfdt_expr",
+    "anti_chirp_dfdt_lambdified",
+    "bondi_acceleration_expr",
+    "bondi_acceleration_lambdified",
     "casimir_pressure_expr",
     "casimir_pressure_lambdified",
     "g_effective_expr",
@@ -49,6 +63,10 @@ __all__ = [
     "graviton_force_radial_lambdified",
     "graviton_potential_expr",
     "graviton_potential_lambdified",
+    "gw_dipole_power_expr",
+    "gw_dipole_power_lambdified",
+    "gw_quadrupole_power_expr",
+    "gw_quadrupole_power_lambdified",
     "heavy_element_force_radial_expr",
     "heavy_element_force_radial_lambdified",
     "heavy_element_potential_expr",
